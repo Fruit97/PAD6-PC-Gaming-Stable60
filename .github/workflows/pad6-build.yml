@@ -27,16 +27,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Use preinstalled Android SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
-          echo "$sdk/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
-          test -x "$sdk/cmdline-tools/16.0/bin/sdkmanager"
-          "$sdk/cmdline-tools/16.0/bin/sdkmanager" --version
+      - name: Prepare Android SDK with current action
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
       - name: Prepare native build packages
         run: |
           set -euo pipefail
