@@ -26,7 +26,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Use preinstalled Android SDK and install API 35
+      - name: Configure Android SDK (current action)
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+      - name: Install Android API 35
         shell: bash
         run: |
           yes | sdkmanager --licenses > /dev/null || true
