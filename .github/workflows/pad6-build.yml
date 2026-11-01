@@ -65,6 +65,38 @@ jobs:
           python3 pad6_ci/apply_pad6.py DroidDeck-PAD6
           grep -F 'applicationId "com.pad6.pcgaming"' DroidDeck-PAD6/app/build.gradle
           grep -F 'Pad6Profile.applyOnce(this)' DroidDeck-PAD6/app/src/main/java/com/droiddeck/launcher/App.kt
+      - name: Fix nested cross-architecture Rust test execution
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          build = Path("DroidDeck-PAD6/tools/xbox/build.sh")
+          source = build.read_text()
+          anchor = 'source_dir=$(python3 "$repo/tools/xbox/prepare.py" "$cache")'
+          assert source.count(anchor) == 1, "Unexpected Xbox build script: stop without altering runtime"
+          patch = r"""
+          python3 - "$source_dir" <<'PYPAD6'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1]) / "crates/xodus-cli/src/commands/social_session.rs"
+          src = path.read_text()
+          needle = "let child = std::process::Command::new(std::env::current_exe().unwrap())"
+          replacement = '''let mut nested_command = if let Ok(runner) = std::env::var("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER") {
+                      let mut command = std::process::Command::new(runner);
+                      command.arg(std::env::current_exe().unwrap());
+                      command
+                  } else {
+                      std::process::Command::new(std::env::current_exe().unwrap())
+                  };
+                  let child = nested_command'''
+          assert src.count(needle) == 1, "Pinned Xbox test source changed; stop instead of bypassing test"
+          path.write_text(src.replace(needle, replacement))
+          print("Xbox cross-architecture nested subprocess test patched; test remains enabled")
+          PYPAD6
+          """
+          patch = "\n".join(line[10:] if line.startswith("          ") else line for line in patch.splitlines())  # undo workflow indentation from embedded script
+          build.write_text(source.replace(anchor, anchor + "\n" + patch))
+          PY
       - name: Compile full native Android APK, Wine/Steam support components
         env:
           GH_TOKEN: ${{ github.token }}
