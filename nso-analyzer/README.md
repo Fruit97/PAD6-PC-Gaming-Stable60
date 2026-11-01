@@ -1,6 +1,11 @@
-# NSO FPS Analyzer — Android prototype v0.2
+# NSO FPS Analyzer — Android prototype v0.3
 
 แอปอ่านและวิเคราะห์ NSO Nintendo Switch บน Android โดยไม่ Root
+
+## แก้ไข v0.3
+- บันทึกคำสั่ง ARM64 ADRP และคำสั่งที่ใช้ต่อ พร้อม context จริงรอบจุดอ้างอิง
+- ทำ crosscheck กับ SHA256 ของ Demon Slayer 2 1.80 และรายงานการอ่าน float ที่ยืนยันได้
+- ย้ำว่าการอ้างอิงตำแหน่งหน่วยความจำไม่ใช่หลักฐานว่าตำแหน่งดังกล่าวเป็นตัวปลดล็อก FPS
 
 ## แก้ไข v0.2
 - ตรวจแยก NSO แบบบีบอัดกับ Eden dump ที่เก็บส่วนหัวเดิมแต่ข้อมูลโปรแกรมถูกถอดไว้แล้ว
