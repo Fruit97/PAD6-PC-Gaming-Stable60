@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Separate Switch emulator build: does not change the PAD6 PC gaming build.
+name: Build Pad6 Emu60 Nintendo Switch APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-pad6-emu60.yml"
+      - "emu60/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-switch-emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout build configuration
+        uses: actions/checkout@v4
+      - name: Configure Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git python3 unzip nasm pkg-config ninja-build glslang-tools autoconf automake libtool build-essential zstd
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.31.5'
+      - name: Download pinned Eden emulator source and submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --no-checkout --filter=blob:none https://github.com/eden-emulator/mirror.git eden
+          cd eden
+          git fetch --depth 1 origin db83070bf2ca788131fa0eac3db6a7a83b75a24c
+          git checkout --detach db83070bf2ca788131fa0eac3db6a7a83b75a24c
+          git submodule update --init --recursive --depth 1
+          test -s src/android/app/build.gradle.kts
+          test -s src/common/settings.h
+      - name: Customize for Xiaomi Pad 6 without replacing emulator core
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 emu60/patch_eden.py eden
+          grep -F 'applicationId = "com.pad6.emu60"' eden/src/android/app/build.gradle.kts
+          grep -F 'ResolutionSetup::Res3_4X' eden/src/common/settings.h
+      - name: Compile native ARM64 emulator and signed APK
+        shell: bash
+        env:
+          CMAKE_BUILD_PARALLEL_LEVEL: "2"
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx5g"
+        run: |
+          set -euo pipefail
+          chmod +x eden/.ci/android/build.sh eden/src/android/gradlew
+          cd eden
+          .ci/android/build.sh --target standard --build-type Release
+      - name: Confirm real APK structure and ARM64 runtime libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(eden/artifacts/*.apk)
+          (( ${#files[@]} > 0 )) || { echo 'Native build did not produce an APK'; exit 1; }
+          for f in "${files[@]}"; do
+            unzip -t "$f" | tail -n 1
+            unzip -Z1 "$f" | grep -Eq '^lib/arm64-v8a/[^/]+[.]so$' || { echo 'No native ARM64 runtime included'; exit 1; }
+            ls -lh "$f"
+          done
+      - name: Publish installable APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pad6-Emu60-Switch-APK
+          path: eden/artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 30
