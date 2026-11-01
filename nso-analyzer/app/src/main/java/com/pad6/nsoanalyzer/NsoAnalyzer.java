@@ -130,7 +130,10 @@ final class NsoAnalyzer {
         }
     }
     static final class HitLog {
-        final JSONArray hits=new JSONArray(); final Map<String,Integer> counts=new LinkedHashMap<>();
+        final JSONArray hits=new JSONArray();
+        final JSONArray xrefEvidence=new JSONArray();
+        final Map<String,Integer> counts=new LinkedHashMap<>();
+        final Map<String,Integer> evidenceCounts=new LinkedHashMap<>();
         void hit(String kind,String section,long rva,long sourceOffset) throws Exception {
             int n=counts.containsKey(kind)?counts.get(kind):0;
             counts.put(kind,n+1);
@@ -139,6 +142,33 @@ final class NsoAnalyzer {
                 o.put("kind",kind).put("segment",section).put("main_rva",fmt(rva)).put("decoded_segment_offset",fmt(sourceOffset));
                 hits.put(o);
             }
+        }
+        void xref(long address,String section,long pc,long sourceOffset,byte[] data,int i,int k,int w,int adrp) throws Exception {
+            String label="ARM64 ADRP reference to "+fmt(address);
+            hit(label,section,pc,sourceOffset);
+            int found=evidenceCounts.containsKey(label)?evidenceCounts.get(label):0;
+            evidenceCounts.put(label,found+1);
+            if(found>=12)return;
+            int mask=w&0xFFC00000;
+            String consumer=mask==0xF9400000?"LDR X":mask==0xB9400000?"LDR W":
+                mask==0xFD400000?"LDR D":mask==0xBD400000?"LDR S":
+                ((w&0x7F000000)==0x11000000?"ADD immediate":"other");
+            int lo=Math.max(0,i-16),hi=Math.min(data.length,i+4*k+36);
+            JSONObject item=new JSONObject();
+            item.put("target_main_rva",fmt(address));
+            item.put("adpr_main_rva",fmt(pc));
+            item.put("consumer_main_rva",fmt(pc+4L*k));
+            item.put("adpr_register",adrp&31);
+            item.put("consumer_base_register",(w>>>5)&31);
+            item.put("consumer_dest_register",w&31);
+            item.put("consumer_kind",consumer);
+            item.put("consumer_distance_in_instructions",k);
+            item.put("adpr_machine_code",fmt(Integer.toUnsignedLong(adrp)));
+            item.put("consumer_machine_code",fmt(Integer.toUnsignedLong(w)));
+            item.put("context_start_main_rva",fmt(pc-(i-lo)));
+            item.put("context_hex",hex(data,lo,hi));
+            item.put("qualification","Verified address arithmetic, not validated FPS identity; intervening instruction side effects not modeled");
+            xrefEvidence.put(item);
         }
     }
     static int word(byte[] b,int off) {
@@ -186,7 +216,7 @@ final class NsoAnalyzer {
                                       mask==0xB9400000||mask==0xBD400000?4:0;
                                 if(bytes!=0)address=page+((long)((w>>>10)&4095)*bytes);
                             }
-                            if(targets.contains(address))log.hit("ARM64 ADRP reference to "+fmt(address),section.name,pc,fileBase+i);
+                            if(targets.contains(address))log.xref(address,section.name,pc,fileBase+i,b,i,k,w,a);
                         }
                     }
                 }
@@ -199,7 +229,7 @@ final class NsoAnalyzer {
     }
     static JSONObject analyze(Context context, Uri uri, String displayName, Set<Long> targets, Progress progress) throws Exception {
         JSONObject result=new JSONObject();
-        result.put("analyzer_version","0.2.0");
+        result.put("analyzer_version","0.3.0");
         result.put("type","NSO_SCAN_ONLY_NOT_AN_FPS_MOD");
         result.put("name",displayName);
         byte[] rawHeader=new byte[256];
@@ -302,7 +332,30 @@ final class NsoAnalyzer {
         }
         JSONObject counts=new JSONObject();
         for(Map.Entry<String,Integer> e:log.counts.entrySet())counts.put(e.getKey(),e.getValue());
-        result.put("hit_counts",counts).put("hits_first_20_each",log.hits).put("warnings",warnings);
+        result.put("hit_counts",counts)
+            .put("hits_first_20_each",log.hits)
+            .put("arm64_xref_evidence_first_12_per_target",log.xrefEvidence)
+            .put("warnings",warnings);
+        if(flatDump && result.getString("sha256").equalsIgnoreCase(
+             "943E297FEEAD953998AA1B06FC68A22BC414A4E147023867165F24F6E62CAAC8")){
+            JSONObject known=new JSONObject();
+            known.put("context","Same validated Demon Slayer 2 1.80 SHA256 and Build ID");
+            known.put("cap_pointer_rva",fmt(0xCDA1FF0L));
+            known.put("cap_pointer_runtime_value","unavailable_from_static_dump");
+            known.put("observed_pointer_value_in_dump","0x0");
+            known.put("reader_rva_1",fmt(0x415A174));
+            known.put("reader_rva_2",fmt(0x415A214));
+            known.put("load_float_rva_1",fmt(0x415A1AC));
+            known.put("load_float_rva_2",fmt(0x415A250));
+            known.put("reader_1_exact_machine_bytes","346204F095FA47F9");
+            known.put("reader_2_exact_machine_bytes","286204F013F947F9");
+            known.put("float_load_1_exact_machine_bytes","A07A68BC");
+            known.put("float_load_2_exact_machine_bytes","607A68BC");
+            known.put("FPS_semantics_confirmed",false);
+            known.put("valid_60fps_patch_confirmed",false);
+            known.put("reason","Pointer is zero in static image; runtime pointee and desired frame cap not verified.");
+            result.put("known_build_static_crosscheck",known);
+        }
         result.put("disclaimer","Confirmed signature bytes do not by themselves prove a 60FPS patch or valid cheat target. No game data was changed.");
         return result;
     }
