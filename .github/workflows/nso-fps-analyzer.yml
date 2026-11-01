@@ -7,6 +7,11 @@ on:
       - "nso-analyzer/**"
       - ".github/workflows/nso-fps-analyzer.yml"
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'nso-analyzer/**'
+      - '.github/workflows/nso-fps-analyzer.yml'
 permissions:
   contents: read
 jobs:
