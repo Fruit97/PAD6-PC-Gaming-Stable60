@@ -144,8 +144,8 @@ final class NsoAnalyzer {
     static int word(byte[] b,int off) {
         return (b[off]&255)|((b[off+1]&255)<<8)|((b[off+2]&255)<<16)|((b[off+3]&255)<<24);
     }
-    static void scan(File file,Section section,Set<Long> targets,HitLog log) throws Exception {
-        try(InputStream in=new BufferedInputStream(new FileInputStream(file),65536)){
+    static void scan(InputStream source,Section section,Set<Long> targets,HitLog log) throws Exception {
+        try(InputStream in=new BufferedInputStream(source,65536)){
             byte[] b=new byte[CHUNK+128]; int carry=0; long fileBase=0;
             for(;;){
                 int r=in.read(b,carry,CHUNK);
@@ -199,7 +199,7 @@ final class NsoAnalyzer {
     }
     static JSONObject analyze(Context context, Uri uri, String displayName, Set<Long> targets, Progress progress) throws Exception {
         JSONObject result=new JSONObject();
-        result.put("analyzer_version","0.1.0");
+        result.put("analyzer_version","0.2.0");
         result.put("type","NSO_SCAN_ONLY_NOT_AN_FPS_MOD");
         result.put("name",displayName);
         byte[] rawHeader=new byte[256];
@@ -232,35 +232,70 @@ final class NsoAnalyzer {
             sections.add(s);sectionInfo.put(s.json());
         }
         result.put("segments",sectionInfo);
+        long packedEnd=0x100, flatEnd=0x100;
+        for(Section section:sections){
+            packedEnd=Math.max(packedEnd,section.fileOffset+section.storedSize);
+            flatEnd=Math.max(flatEnd,0x100+section.mainRva+section.size);
+        }
+        boolean apparentDump=totalSize>=flatEnd && totalSize>packedEnd+4L*1024*1024;
+        boolean signedKnownDump=false;
+        if(apparentDump && result.getString("build_id").startsWith("DADF52C97D951FBC")){
+            // Known 1.80 signature was previously verified at raw dump offset 0x05B642A8.
+            try(InputStream probe=context.getContentResolver().openInputStream(uri)){
+                if(probe==null)throw new IOException("Cannot open dump for signature check");
+                skipExact(probe,0x05B642A8L);
+                byte[] sig=new byte[8];new DataInputStream(probe).readFully(sig);
+                signedKnownDump=Arrays.equals(sig,PATTERNS[0]);
+            }
+        }
+        // Eden PatchManager::PatchNSO receives a 0x100-byte original header plus
+        // ALREADY decoded / BSS-extended program memory. The original NSO header
+        // still advertises compression, which MUST NOT be applied again.
+        boolean flatDump=apparentDump &&
+            (signedKnownDump || !result.getString("build_id").startsWith("DADF52C97D951FBC"));
+        result.put("payload_layout",flatDump?"eden_predecoded_memory_image":"original_nso_segment_layout");
+        result.put("expected_packed_end",fmt(packedEnd));
+        result.put("expected_memory_image_end",fmt(flatEnd));
+        result.put("known_build_signature_checked",signedKnownDump);
         JSONArray inputs=new JSONArray();
         for(long v:targets)inputs.put(fmt(v));
         result.put("reference_targets_for_investigation_only",inputs);
         HitLog log=new HitLog();
         JSONArray warnings=new JSONArray();
+        if(flatDump)warnings.put("Eden predecoded NSO dump: ignore original LZ4 header flags; scanned memory image without decompressing again.");
         for(Section section:sections){
             if(section.size==0)continue;
-            if(section.size>450_000_000L || section.storedSize>450_000_000L ||
-               section.fileOffset+section.storedSize>totalSize){
+            long scanOffset=flatDump?0x100+section.mainRva:section.fileOffset;
+            long scanStoredSize=flatDump?section.size:section.storedSize;
+            if(section.size>450_000_000L || scanStoredSize>450_000_000L ||
+               scanOffset+scanStoredSize>totalSize){
                 warnings.put(section.name+": invalid or unsafe section size");continue;
             }
-            if((flags&0x80)!=0 && section.compressed){
+            if(!flatDump && (flags&0x80)!=0 && section.compressed){
                 warnings.put(section.name+": ZBIC section skipped");continue;
             }
-            progress.update("กำลังถอดและตรวจ "+section.name+"...");
+            progress.update("กำลังตรวจ "+section.name+"...");
             File tmp=null;
             try{
-                if(context.getCacheDir().getUsableSpace()<section.size+8*1024*1024L)
-                    throw new IOException("Insufficient cache space");
-                tmp=File.createTempFile("nso_scan_",".dat",context.getCacheDir());
-                try(InputStream source=context.getContentResolver().openInputStream(uri);
-                    OutputStream dest=new BufferedOutputStream(new FileOutputStream(tmp),65536)){
-                    if(source==null)throw new IOException("Cannot reopen NSO");
-                    skipExact(source,section.fileOffset);
-                    if(section.compressed){
+                if(flatDump || !section.compressed){
+                    // Stream the decoded image directly: no LZ4 and no huge cache copy.
+                    try(InputStream source=context.getContentResolver().openInputStream(uri)){
+                        if(source==null)throw new IOException("Cannot open NSO for scan");
+                        skipExact(source,scanOffset);
+                        scan(new LimitedStream(source,section.size),section,targets,log);
+                    }
+                } else {
+                    if(context.getCacheDir().getUsableSpace()<section.size+8*1024*1024L)
+                        throw new IOException("Insufficient cache space for LZ4 segment");
+                    tmp=File.createTempFile("nso_scan_",".dat",context.getCacheDir());
+                    try(InputStream source=context.getContentResolver().openInputStream(uri);
+                        OutputStream dest=new BufferedOutputStream(new FileOutputStream(tmp),65536)){
+                        if(source==null)throw new IOException("Cannot reopen NSO");
+                        skipExact(source,section.fileOffset);
                         decompressLz4(new LimitedStream(source,section.storedSize),dest,section.size);
-                    } else copyExact(source,dest,section.size);
+                    }
+                    scan(new FileInputStream(tmp),section,targets,log);
                 }
-                scan(tmp,section,targets,log);
             } catch(Exception ex){
                 warnings.put(section.name+": "+ex.getClass().getSimpleName()+": "+ex.getMessage());
             } finally { if(tmp!=null)tmp.delete(); }
