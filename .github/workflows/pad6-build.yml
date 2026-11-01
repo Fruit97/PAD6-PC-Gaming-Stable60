@@ -97,6 +97,18 @@ jobs:
           patch = "\n".join(line[10:] if line.startswith("          ") else line for line in patch.splitlines())  # undo workflow indentation from embedded script
           build.write_text(source.replace(anchor, anchor + "\n" + patch))
           PY
+      - name: Load verified Debian 11 build image from upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd DroidDeck-PAD6
+          . tools/linuxfs/debian-image.env
+          gh release download "$DEBIAN_IMAGE_TAG" -R Droid-Deck/DroidDeck -p "$DEBIAN_IMAGE_ASSET" -O /tmp/pad6-debian-bullseye.tar.zst
+          echo "$DEBIAN_IMAGE_SHA256  /tmp/pad6-debian-bullseye.tar.zst" | sha256sum -c -
+          zstd -dc /tmp/pad6-debian-bullseye.tar.zst | docker load
+          docker image inspect public.ecr.aws/docker/library/debian:bullseye >/dev/null
+          rm -f /tmp/pad6-debian-bullseye.tar.zst
       - name: Compile full native Android APK, Wine/Steam support components
         env:
           GH_TOKEN: ${{ github.token }}
