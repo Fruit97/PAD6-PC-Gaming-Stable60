@@ -1,0 +1,95 @@
+# PAD6 PC Gaming - Xiaomi Pad 6 customized version of GPL-3.0 DroidDeck.
+# One-file workflow: contains the patch bundle so no other files are required.
+# Upstream commit pinned to 6e57af02af31547d19c5007087f869524d1e05a4.
+# The build is attempted by GitHub, not tested on any user's physical tablet.
+name: PAD6 PC Gaming Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/pad6-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  native-apk:
+    name: Full ARM64 Steam/Proton APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - name: Checkout this build repository
+        uses: actions/checkout@v4
+      - name: Prepare Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Prepare native build packages
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zstd git unzip python3 python3-venv curl xz-utils cmake ninja-build build-essential pkg-config
+          if ! command -v rustup >/dev/null; then
+            echo 'Rustup is not installed on the runner' >&2; exit 1
+          fi
+          rustup default stable
+          docker info >/dev/null
+          gh --version
+      - name: Install compatible Android platform and NDK
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install 'platforms;android-34' 'build-tools;35.0.0' 'cmake;3.22.1' 'ndk;30.0.16248370'
+          test -f "$ANDROID_HOME/ndk/30.0.16248370/source.properties"
+      - name: Extract embedded Xiaomi Pad 6 patch and run tests
+        run: |
+          set -euo pipefail
+          printf '%s' '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' | base64 --decode | tar -xz
+          python3 -m unittest discover -s pad6_ci/tests -v
+      - name: Checkout verified DroidDeck runtime source
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/Droid-Deck/DroidDeck.git DroidDeck-PAD6
+          git -C DroidDeck-PAD6 checkout --detach 6e57af02af31547d19c5007087f869524d1e05a4
+          test "$(git -C DroidDeck-PAD6 rev-parse HEAD)" = '6e57af02af31547d19c5007087f869524d1e05a4'
+      - name: Apply Pad 6 device-specific 60 FPS profile
+        run: |
+          set -euo pipefail
+          python3 pad6_ci/apply_pad6.py DroidDeck-PAD6
+          grep -F 'applicationId "com.pad6.pcgaming"' DroidDeck-PAD6/app/build.gradle
+          grep -F 'Pad6Profile.applyOnce(this)' DroidDeck-PAD6/app/src/main/java/com/droiddeck/launcher/App.kt
+      - name: Compile full native Android APK, Wine/Steam support components
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DROIDDECK_BUILD_VARIANT: release
+        run: |
+          set -euo pipefail
+          cd DroidDeck-PAD6
+          bash tools/build_local.sh
+      - name: Check final APK identity, signatures and checksum
+        run: |
+          set -euo pipefail
+          apk=DroidDeck-PAD6/app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          unzip -t "$apk" >/dev/null
+          aapt="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name aapt | sort -V | tail -1)"
+          signer="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)"
+          test -x "$aapt" && test -x "$signer"
+          "$aapt" dump badging "$apk" | grep -F "package: name='com.pad6.pcgaming'"
+          "$signer" verify --verbose --print-certs "$apk"
+          sha256sum "$apk" | tee PAD6-PC-Gaming-SHA256.txt
+          cp "$apk" PAD6-PC-Gaming-Stable60-v0.2.0.apk
+      - name: Publish installable APK only after checks succeed
+        uses: actions/upload-artifact@v4
+        with:
+          name: PAD6-PC-Gaming-Stable60-APK
+          path: |
+            PAD6-PC-Gaming-Stable60-v0.2.0.apk
+            PAD6-PC-Gaming-SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
