@@ -65,6 +65,31 @@ jobs:
           python3 pad6_ci/apply_pad6.py DroidDeck-PAD6
           grep -F 'applicationId "com.pad6.pcgaming"' DroidDeck-PAD6/app/build.gradle
           grep -F 'Pad6Profile.applyOnce(this)' DroidDeck-PAD6/app/src/main/java/com/droiddeck/launcher/App.kt
+      - name: Apply exact Xiaomi Pad 6 16:10 V3 gaming presets
+        run: |
+          set -euo pipefail
+          profile=DroidDeck-PAD6/app/src/main/java/com/droiddeck/launcher/Pad6Profile.kt
+          test -f "$profile"
+          test -f pad6/Pad6Profile.kt
+          grep -F 'KEY_INITIALIZED_V3' pad6/Pad6Profile.kt
+          grep -F '1152x720' pad6/Pad6Profile.kt
+          grep -F '960x600' pad6/Pad6Profile.kt
+          grep -F '1440x900' pad6/Pad6Profile.kt
+          grep -F 'PERFORMANCE_TSO' pad6/Pad6Profile.kt
+          cp pad6/Pad6Profile.kt "$profile"
+          python3 - <<'PY'
+          from pathlib import Path
+          f = Path("DroidDeck-PAD6/app/build.gradle")
+          s = f.read_text()
+          for original, upgraded in (
+              ("versionCode 2", "versionCode 3"),
+              ('versionName "0.2.0-pad6"', 'versionName "0.3.0-pad6"'),
+          ):
+              assert s.count(original) == 1, ("Wrong base APK version", original)
+              s = s.replace(original, upgraded, 1)
+          f.write_text(s)
+          print("Pad 6 16:10 profiles installed; APK version upgraded to 0.3.0-pad6")
+          PY
       - name: Fix nested cross-architecture Rust test execution
         run: |
           set -euo pipefail
@@ -129,13 +154,13 @@ jobs:
           "$aapt" dump badging "$apk" | grep -F "package: name='com.pad6.pcgaming'"
           "$signer" verify --verbose --print-certs "$apk"
           sha256sum "$apk" | tee PAD6-PC-Gaming-SHA256.txt
-          cp "$apk" PAD6-PC-Gaming-Stable60-v0.2.0.apk
+          cp "$apk" PAD6-PC-Gaming-Stable60-v0.3.0.apk
       - name: Publish installable APK only after checks succeed
         uses: actions/upload-artifact@v4
         with:
           name: PAD6-PC-Gaming-Stable60-APK
           path: |
-            PAD6-PC-Gaming-Stable60-v0.2.0.apk
+            PAD6-PC-Gaming-Stable60-v0.3.0.apk
             PAD6-PC-Gaming-SHA256.txt
           if-no-files-found: error
           retention-days: 30
