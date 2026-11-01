@@ -59,7 +59,7 @@ public final class MainActivity extends Activity {
         scroll.addView(root);setContentView(scroll);
         TextView title=text("NSO FPS Analyzer",25,true);title.setTextColor(accent);
         root.addView(title,params(0));
-        TextView subtitle=text("วิเคราะห์โค้ดเกม Switch ใน Xiaomi Pad 6\\nไม่ต้อง Root · ไม่แก้ไฟล์เกม · ไม่อัปโหลด NSO",14,false);
+        TextView subtitle=text("วิเคราะห์โค้ดเกม Switch ใน Xiaomi Pad 6\nไม่ต้อง Root · ไม่แก้ไฟล์เกม · ไม่อัปโหลด NSO",14,false);
         subtitle.setLineSpacing(dp(2),1f);root.addView(subtitle,params(8));
         TextView section=text("1. เลือกไฟล์ main.nso",17,true);root.addView(section,params(24));
         Button pick=button("เลือกไฟล์ NSO",panel);root.addView(pick,params(10));
@@ -96,7 +96,7 @@ public final class MainActivity extends Activity {
             Intent send=new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
             send.putExtra(Intent.EXTRA_TEXT,
-                "ช่วยวิเคราะห์รายงาน NSO นี้ต่อ ห้ามเดาตำแหน่ง FPS ที่ไม่ยืนยัน:\\n"+report);
+                "ช่วยวิเคราะห์รายงาน NSO นี้ต่อ ห้ามเดาตำแหน่ง FPS ที่ไม่ยืนยัน:\n"+report);
             startActivity(Intent.createChooser(send,"เลือก ChatGPT เพื่อส่งรายงาน"));
         });
         TextView foot=text("แอปนี้เป็นเครื่องมืออ่านและค้นหาเท่านั้น ยังไม่สร้างม็อด 60 FPS อัตโนมัติ และไม่เชื่อมกับแชทโดยไม่ผ่านการแชร์",12,false);
@@ -115,7 +115,7 @@ public final class MainActivity extends Activity {
     }
     private Set<Long> parseTargets(){
         Set<Long> result=new LinkedHashSet<>();
-        for(String raw:addresses.getText().toString().split("[,;\\\\s]+")){
+        for(String raw:addresses.getText().toString().split("[,;\\s]+")){
             String s=raw.trim();
             if(s.isEmpty())continue;
             try { result.add(Long.parseUnsignedLong(s.replaceFirst("(?i)^0x",""),16)); }
@@ -143,7 +143,7 @@ public final class MainActivity extends Activity {
                 });
             } catch(Exception ex){
                 runOnUiThread(()->{
-                    output.setText("วิเคราะห์ไม่สำเร็จ: "+ex.getClass().getSimpleName()+"\\n"+ex.getMessage());
+                    output.setText("วิเคราะห์ไม่สำเร็จ: "+ex.getClass().getSimpleName()+"\n"+ex.getMessage());
                     status.setText("เกิดข้อผิดพลาด");
                     analyzeButton.setEnabled(true);
                 });
