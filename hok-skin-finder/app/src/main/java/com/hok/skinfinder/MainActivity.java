@@ -2,6 +2,8 @@ package com.hok.skinfinder;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.ClipboardManager;
+import android.content.ClipData;
 import android.content.ContentResolver;
 import android.database.Cursor;
 import android.net.Uri;
@@ -37,7 +39,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class MainActivity extends Activity {
-    private static final int FILES=11, FOLDER=12, EXPORT=13;
+    private static final int FILES=11, FOLDER=12, EXPORT=13, EXPORT_BRIEF=14;
     private static final int GREEN=0xff13b394, BG=0xff101827, TEXT=0xffecf5ff, CARD=0xff26374b;
     private static final String[] WORDS={"skin","skinin","skinid","costume","hero","heroid","character","avatar","model","texture","material","prefab","mesh","asset","fashion","portrait","皮肤","英雄","模型","贴图"};
     private static final long FAST_LIMIT=32L*1024*1024;
@@ -48,7 +50,7 @@ public class MainActivity extends Activity {
     private final List<JSONObject> hits=new ArrayList<>();
     private Uri tree=null;
     private TextView status, output;
-    private Button scan, export, chooseFile, chooseFolder, cancel;
+    private Button scan, export, copyBrief, exportBrief, chooseFile, chooseFolder, cancel;
     private CheckBox deep;
     private volatile boolean busy=false;
     private long totalFiles=0,totalBytes=0,archives=0,errors=0,lastUpdate=0;
@@ -58,7 +60,7 @@ public class MainActivity extends Activity {
         LinearLayout outer=new LinearLayout(this); outer.setOrientation(1);
         outer.setBackgroundColor(BG); outer.setPadding(px(16),px(10),px(16),px(10));
         outer.addView(text("HOK SKIN FINDER",23,true,GREEN));
-        outer.addView(text("V1.3 • สแกนไฟล์จริงแบบออฟไลน์ • ไม่ต้อง Root",13,false,0xffb3cada));
+        outer.addView(text("V1.4 • สแกนไฟล์จริงแบบออฟไลน์ • ไม่ต้อง Root",13,false,0xffb3cada));
         ScrollView scroll=new ScrollView(this);
         outer.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout body=new LinearLayout(this); body.setOrientation(1); scroll.addView(body);
@@ -70,7 +72,9 @@ public class MainActivity extends Activity {
         deep.setTextColor(TEXT); deep.setButtonTintList(ColorStateList.valueOf(GREEN)); body.addView(deep);
         scan=button("3. เริ่มค้นหาสกิน"); body.addView(scan);
         cancel=button("หยุดสแกน"); body.addView(cancel);
-        export=button("4. บันทึกรายงาน JSON เพื่อส่งวิเคราะห์"); body.addView(export);
+        export=button("4. บันทึกรายงาน JSON ฉบับเต็ม"); body.addView(export);
+        copyBrief=button("5. คัดลอกรายงานย่อ (ส่งในแชทได้เลย)"); body.addView(copyBrief);
+        exportBrief=button("6. บันทึกรายงานย่อ .txt"); body.addView(exportBrief);
         status=text("ยังไม่ได้เลือกข้อมูล",14,true,TEXT);
         status.setPadding(0,px(14),0,px(14)); body.addView(status);
         body.addView(text("ผลวิเคราะห์เบื้องต้น",16,true,GREEN));
@@ -93,6 +97,21 @@ public class MainActivity extends Activity {
         });
         scan.setOnClickListener(v->startScan());
         cancel.setOnClickListener(v->{stop.set(true);status.setText("กำลังหยุดสแกน...");});
+        copyBrief.setOnClickListener(v->{
+            if(finalResults==null)return;
+            ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            if(cb!=null){
+                cb.setPrimaryClip(ClipData.newPlainText("HOK Skin Finder brief",briefText()));
+                message("คัดลอกรายงานย่อแล้ว กลับไป ChatGPT และกดวางข้อความได้เลย");
+            }
+        });
+        exportBrief.setOnClickListener(v->{
+            if(finalResults==null)return;
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.setType("text/plain"); i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.putExtra(Intent.EXTRA_TITLE,"HOK-Skin-Finder-brief.txt");
+            startActivityForResult(i,EXPORT_BRIEF);
+        });
         export.setOnClickListener(v->{
             if(finalResults==null)return;
             Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -115,10 +134,22 @@ public class MainActivity extends Activity {
     private void controls(){
         scan.setEnabled(!busy);chooseFile.setEnabled(!busy);chooseFolder.setEnabled(!busy);
         cancel.setEnabled(busy);export.setEnabled(!busy && finalResults!=null);
+        copyBrief.setEnabled(!busy && finalResults!=null);
+        exportBrief.setEnabled(!busy && finalResults!=null);
     }
     @Override protected void onActivityResult(int req,int result,Intent data){
         super.onActivityResult(req,result,data);
         if(result!=RESULT_OK||data==null)return;
+        if(req==EXPORT_BRIEF){
+            if(data.getData()!=null&&finalResults!=null){
+                try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"w")){
+                    if(out==null)throw new IOException("No output stream");
+                    out.write(briefText().getBytes(StandardCharsets.UTF_8));
+                    status.setText("บันทึก HOK-Skin-Finder-brief.txt สำเร็จ");
+                }catch(Exception e){message("บันทึกรายงานย่อไม่ได้: "+e.getMessage());}
+            }
+            return;
+        }
         if(req==EXPORT){
             if(data.getData()!=null&&finalResults!=null){
                 try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"w")){
@@ -320,6 +351,31 @@ public class MainActivity extends Activity {
         return "unknown";
     }
     private static boolean ascii(byte[] b,String x){for(int i=0;i<x.length();i++)if(b[i]!=(byte)x.charAt(i))return false;return true;}
+    private String briefText(){
+        StringBuilder b=new StringBuilder();
+        b.append("HOK Skin Finder V1.4 - Brief report\n");
+        b.append("Scanned files: ").append(totalFiles).append("\n");
+        b.append("Scanned MB: ").append(totalBytes/1048576).append("\n");
+        b.append("ZIP archives: ").append(archives).append("\n");
+        b.append("Scan errors: ").append(errors).append("\n");
+        b.append("Candidate entries: ").append(finalResults==null?0:finalResults.length()).append("\n\n");
+        if(finalResults!=null){
+            int top=Math.min(40,finalResults.length());
+            for(int i=0;i<top;i++){
+                JSONObject o=finalResults.optJSONObject(i);
+                if(o==null)continue;
+                b.append("#").append(i+1).append(" score=").append(o.optInt("score")).append("\n");
+                b.append("path: ").append(o.optString("path")).append("\n");
+                b.append("format: ").append(o.optString("format")).append("\n");
+                b.append("markers: ").append(o.optJSONArray("markers")).append("\n");
+                b.append("readBytes: ").append(o.optLong("readBytes")).append("\n\n");
+                if(b.length()>15000){b.append("...Report shortened for clipboard transfer.\n");break;}
+            }
+            if(finalResults.length()>top)b.append("More results are available in the full JSON report.\n");
+        }
+        b.append("Heuristic indicators only; not proof of skin assets. The app did not modify game files.");
+        return b.toString();
+    }
     private String displayReport(){
         StringBuilder s=new StringBuilder();
         s.append("ไฟล์ที่ตรวจ: ").append(totalFiles).append("\n");
