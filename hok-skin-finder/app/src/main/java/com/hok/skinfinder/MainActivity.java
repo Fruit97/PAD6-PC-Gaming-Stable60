@@ -39,7 +39,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class MainActivity extends Activity {
-    private static final int FILES=11, FOLDER=12, EXPORT=13, EXPORT_BRIEF=14;
+    private static final int FILES=11, FOLDER=12, EXPORT=13, EXPORT_BRIEF=14, INSPECT_FILE=15, INSPECT_EXPORT=16;
     private static final int GREEN=0xff13b394, BG=0xff101827, TEXT=0xffecf5ff, CARD=0xff26374b;
     private static final String[] WORDS={"skin","skinin","skinid","costume","hero","heroid","character","avatar","model","texture","material","prefab","mesh","asset","fashion","portrait","皮肤","英雄","模型","贴图"};
     private static final long FAST_LIMIT=32L*1024*1024;
@@ -53,6 +53,8 @@ public class MainActivity extends Activity {
     private Uri tree=null;
     private TextView status, output;
     private Button scan, export, copyBrief, exportBrief, chooseFile, chooseFolder, cancel;
+    private Button inspectFile, copyInspection, saveInspection;
+    private String lastInspection=null;
     private CheckBox deep;
     private volatile boolean busy=false;
     private long totalFiles=0,totalBytes=0,archives=0,errors=0,lastUpdate=0;
@@ -62,7 +64,7 @@ public class MainActivity extends Activity {
         LinearLayout outer=new LinearLayout(this); outer.setOrientation(1);
         outer.setBackgroundColor(BG); outer.setPadding(px(16),px(10),px(16),px(10));
         outer.addView(text("HOK SKIN FINDER",23,true,GREEN));
-        outer.addView(text("V1.5 • ค้นหาทรัพยากรและแยกไฟล์ล็อกแบบออฟไลน์ • ไม่ต้อง Root",13,false,0xffb3cada));
+        outer.addView(text("V1.6 • ตรวจโครงสร้าง ZIP / SQLite / UnityFSแบบออฟไลน์ • ไม่ต้อง Root",13,false,0xffb3cada));
         ScrollView scroll=new ScrollView(this);
         outer.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout body=new LinearLayout(this); body.setOrientation(1); scroll.addView(body);
@@ -70,6 +72,9 @@ public class MainActivity extends Activity {
         expl.setPadding(0,px(16),0,px(16)); body.addView(expl);
         chooseFile=button("1. เลือกไฟล์เกม / OBB / MPK / ZIP"); body.addView(chooseFile);
         chooseFolder=button("2. เลือกโฟลเดอร์ไฟล์เกม"); body.addView(chooseFolder);
+        inspectFile=button("เจาะโครงสร้างไฟล์เดี่ยว (ZIP / DB / UnityFS / MPK)"); body.addView(inspectFile);
+        copyInspection=button("คัดลอกรายงานเจาะไฟล์"); body.addView(copyInspection);
+        saveInspection=button("บันทึกรายงานเจาะไฟล์ TXT"); body.addView(saveInspection);
         deep=new CheckBox(this); deep.setText("สแกนละเอียดทุกไบต์ (อาจใช้เวลานาน)");
         deep.setTextColor(TEXT); deep.setButtonTintList(ColorStateList.valueOf(GREEN)); body.addView(deep);
         scan=button("3. เริ่มค้นหาสกิน"); body.addView(scan);
@@ -96,6 +101,28 @@ public class MainActivity extends Activity {
             Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
             i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
             startActivityForResult(i,FOLDER);
+        });
+        inspectFile.setOnClickListener(v->{
+            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(i,INSPECT_FILE);
+        });
+        copyInspection.setOnClickListener(v->{
+            if(lastInspection==null)return;
+            ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            if(cb!=null){
+                cb.setPrimaryClip(ClipData.newPlainText("HOK Deep File Report",lastInspection));
+                message("คัดลอกรายงานเจาะไฟล์แล้ว กลับ ChatGPT และกดวางได้เลย");
+            }
+        });
+        saveInspection.setOnClickListener(v->{
+            if(lastInspection==null)return;
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.setType("text/plain");i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.putExtra(Intent.EXTRA_TITLE,"HOK-Deep-Inspection.txt");
+            startActivityForResult(i,INSPECT_EXPORT);
         });
         scan.setOnClickListener(v->startScan());
         cancel.setOnClickListener(v->{stop.set(true);status.setText("กำลังหยุดสแกน...");});
@@ -136,12 +163,30 @@ public class MainActivity extends Activity {
     private void controls(){
         scan.setEnabled(!busy);chooseFile.setEnabled(!busy);chooseFolder.setEnabled(!busy);
         cancel.setEnabled(busy);export.setEnabled(!busy && finalResults!=null);
+        inspectFile.setEnabled(!busy);
+        copyInspection.setEnabled(!busy && lastInspection!=null);
+        saveInspection.setEnabled(!busy && lastInspection!=null);
         copyBrief.setEnabled(!busy && finalResults!=null);
         exportBrief.setEnabled(!busy && finalResults!=null);
     }
     @Override protected void onActivityResult(int req,int result,Intent data){
         super.onActivityResult(req,result,data);
         if(result!=RESULT_OK||data==null)return;
+        if(req==INSPECT_EXPORT){
+            if(data.getData()!=null&&lastInspection!=null){
+                try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"w")){
+                    if(out==null)throw new IOException("No output stream");
+                    out.write(lastInspection.getBytes(StandardCharsets.UTF_8));
+                    status.setText("บันทึกรายงานเจาะไฟล์สำเร็จ");
+                }catch(Exception e){message("บันทึกไม่ได้: "+e.getMessage());}
+            }
+            return;
+        }
+        if(req==INSPECT_FILE){
+            Uri picked=data.getData();
+            if(picked!=null)deepInspect(picked);
+            return;
+        }
         if(req==EXPORT_BRIEF){
             if(data.getData()!=null&&finalResults!=null){
                 try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"w")){
@@ -157,7 +202,7 @@ public class MainActivity extends Activity {
                 try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"w")){
                     if(out==null)throw new IOException("No output stream");
                     JSONObject r=new JSONObject();
-                    r.put("app","HOK Skin Finder 1.5");r.put("scannedFiles",totalFiles);
+                    r.put("app","HOK Skin Finder 1.6");r.put("scannedFiles",totalFiles);
                     r.put("scannedBytes",totalBytes);r.put("archives",archives);r.put("errors",errors);
                     r.put("note","Results are heuristic clues, not verified skin assets");
                     r.put("rows",finalResults);
@@ -196,6 +241,29 @@ public class MainActivity extends Activity {
             }
         }catch(Exception e){message("เลือกไฟล์ไม่สำเร็จ: "+e.getMessage());}
         controls();
+    }
+    private void deepInspect(Uri picked){
+        if(busy)return;
+        busy=true;lastInspection=null;status.setText("กำลังอ่านโครงสร้างไฟล์จริง...");
+        output.setText("อ่านส่วนหัวและรายการข้อมูลที่รองรับ โดยไม่เปลี่ยนไฟล์เกม");
+        controls();
+        new Thread(()->{
+            String report;
+            try{
+                String name=metadata(picked)[0];
+                report=DeepFileInspector.inspect(this,getContentResolver(),picked,name);
+            }catch(Exception e){
+                report="ไม่สามารถตรวจโครงสร้างไฟล์: "+e.getClass().getSimpleName()+": "+e.getMessage();
+            }
+            final String ready=report;
+            ui.post(()->{
+                lastInspection=ready;
+                busy=false;
+                status.setText("วิเคราะห์ไฟล์เสร็จแล้ว เลือกคัดลอกหรือบันทึกรายงาน");
+                output.setText(ready);
+                controls();
+            });
+        },"hok-deep-file-inspector").start();
     }
     private void startScan(){
         if(busy)return;
@@ -412,7 +480,7 @@ public class MainActivity extends Activity {
     private static boolean ascii(byte[] b,String x){for(int i=0;i<x.length();i++)if(b[i]!=(byte)x.charAt(i))return false;return true;}
     private String briefText(){
         StringBuilder b=new StringBuilder();
-        b.append("HOK Skin Finder V1.5 - Targeted asset report\n");
+        b.append("HOK Skin Finder V1.6 - Targeted asset report\n");
         b.append("Scanned files: ").append(totalFiles).append("\n");
         b.append("Scanned MB: ").append(totalBytes/1048576).append("\n");
         b.append("ZIP archives: ").append(archives).append("\n");
