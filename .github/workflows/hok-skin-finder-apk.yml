@@ -1,7 +1,7 @@
 name: Build HOK Skin Finder APK
 on:
   push:
-    branches: [hok-skin-finder-build-v13]
+    branches: [hok-skin-finder-build-v14]
   workflow_dispatch:
 jobs:
   build:
@@ -31,6 +31,6 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: HOK-Skin-Finder-v1.3-APK
+          name: HOK-Skin-Finder-v1.4-APK
           path: hok-skin-finder/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
