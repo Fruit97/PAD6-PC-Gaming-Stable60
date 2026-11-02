@@ -48,6 +48,8 @@ public class MainActivity extends Activity {
     private final AtomicBoolean stop=new AtomicBoolean(false);
     private final List<Uri> selected=new ArrayList<>();
     private final List<JSONObject> hits=new ArrayList<>();
+    private final List<JSONObject> largeUnknown=new ArrayList<>();
+    private long excludedLogs=0, excludedPandora=0, metadataCount=0, bundles=0, textures=0, opaque=0;
     private Uri tree=null;
     private TextView status, output;
     private Button scan, export, copyBrief, exportBrief, chooseFile, chooseFolder, cancel;
@@ -60,7 +62,7 @@ public class MainActivity extends Activity {
         LinearLayout outer=new LinearLayout(this); outer.setOrientation(1);
         outer.setBackgroundColor(BG); outer.setPadding(px(16),px(10),px(16),px(10));
         outer.addView(text("HOK SKIN FINDER",23,true,GREEN));
-        outer.addView(text("V1.4 • สแกนไฟล์จริงแบบออฟไลน์ • ไม่ต้อง Root",13,false,0xffb3cada));
+        outer.addView(text("V1.5 • ค้นหาทรัพยากรและแยกไฟล์ล็อกแบบออฟไลน์ • ไม่ต้อง Root",13,false,0xffb3cada));
         ScrollView scroll=new ScrollView(this);
         outer.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout body=new LinearLayout(this); body.setOrientation(1); scroll.addView(body);
@@ -155,10 +157,19 @@ public class MainActivity extends Activity {
                 try(OutputStream out=getContentResolver().openOutputStream(data.getData(),"w")){
                     if(out==null)throw new IOException("No output stream");
                     JSONObject r=new JSONObject();
-                    r.put("app","HOK Skin Finder 1.3");r.put("scannedFiles",totalFiles);
+                    r.put("app","HOK Skin Finder 1.5");r.put("scannedFiles",totalFiles);
                     r.put("scannedBytes",totalBytes);r.put("archives",archives);r.put("errors",errors);
                     r.put("note","Results are heuristic clues, not verified skin assets");
                     r.put("rows",finalResults);
+                    r.put("excludedLogFiles",excludedLogs);
+                    r.put("excludedPandoraFiles",excludedPandora);
+                    r.put("metadataFiles",metadataCount);
+                    r.put("assetBundles",bundles);
+                    r.put("textures",textures);
+                    r.put("opaquePackages",opaque);
+                    JSONArray unresolved=new JSONArray();
+                    for(JSONObject item:largeUnknown)unresolved.put(item);
+                    r.put("largestUnknownFiles",unresolved);
                     out.write(r.toString(2).getBytes(StandardCharsets.UTF_8));
                     status.setText("บันทึกสำเร็จ ส่งไฟล์ JSON กลับมาให้วิเคราะห์ต่อได้");
                 }catch(Exception e){message("บันทึกไม่ได้: "+e.getMessage());}
@@ -190,7 +201,8 @@ public class MainActivity extends Activity {
         if(busy)return;
         if(tree==null&&selected.isEmpty()){message("กรุณาเลือกไฟล์หรือโฟลเดอร์ก่อน");return;}
         busy=true;stop.set(false);totalFiles=0;totalBytes=0;archives=0;errors=0;
-        finalResults=null;hits.clear();lastUpdate=0;
+        finalResults=null;hits.clear();largeUnknown.clear();lastUpdate=0;
+        excludedLogs=0;excludedPandora=0;metadataCount=0;bundles=0;textures=0;opaque=0;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         status.setText("กำลังสแกน...");output.setText("กำลังอ่านข้อมูล");controls();
         final Uri root=tree;
@@ -209,6 +221,8 @@ public class MainActivity extends Activity {
                 }
             }catch(Exception e){errors++;}
             Collections.sort(hits,Comparator.comparingInt(o->-o.optInt("score",0)));
+            Collections.sort(largeUnknown,Comparator.comparingLong(o->-o.optLong("size",0)));
+            if(largeUnknown.size()>30)largeUnknown.subList(30,largeUnknown.size()).clear();
             JSONArray rows=new JSONArray();
             for(JSONObject h:hits)rows.put(h);
             finalResults=rows;
@@ -309,28 +323,72 @@ public class MainActivity extends Activity {
         String lower=path.toLowerCase(Locale.ROOT);
         for(int i=0;i<WORDS.length;i++)if(seen[i]||lower.contains(WORDS[i]))markers.add(WORDS[i]);
         String format=signature(head,first,lower);
+        String category=category(lower,format);
         int score=0;
+        if(category.equals("asset_bundle")){bundles++;score+=45;}
+        else if(category.equals("texture")){textures++;score+=45;}
+        else if(category.equals("opaque_package")){opaque++;score+=25;}
+        else if(category.equals("log"))excludedLogs++;
+        else if(category.equals("pandora"))excludedPandora++;
+        else if(category.equals("metadata"))metadataCount++;
+        else if(category.equals("pandora_bundle")){excludedPandora++;score+=8;}
         for(String m:markers){
-            if(m.equals("skin")||m.equals("skinin")||m.equals("skinid")||m.equals("皮肤")||m.equals("costume"))score+=35;
-            else if(m.contains("hero")||m.equals("英雄")||m.equals("character"))score+=18;
-            else if(m.equals("texture")||m.equals("model")||m.equals("material")||m.equals("prefab")||m.equals("mesh")||m.equals("贴图"))score+=10;
-            else score+=4;
+            if(m.equals("skin")||m.equals("skinin")||m.equals("skinid")||m.equals("皮肤")||m.equals("costume"))score+=10;
+            else if(m.contains("hero")||m.equals("英雄")||m.equals("character"))score+=5;
+            else if(m.equals("texture")||m.equals("model")||m.equals("material")||m.equals("prefab")||m.equals("mesh")||m.equals("贴图"))score+=3;
+            else score+=1;
         }
-        if(format.equals("UnityFS")||format.equals("UnityWeb"))score+=5;
-        if(format.contains("texture"))score+=4;
+        if(lower.contains("skin")||lower.contains("costume")||lower.contains("hero")||lower.contains("character"))score+=30;
+        if(size>=1048576 && category.equals("opaque_package"))score+=10;
         try{
             JSONObject item=new JSONObject();
             item.put("path",path);item.put("size",size);item.put("readBytes",count);
-            item.put("format",format);item.put("score",Math.min(100,score));
+            item.put("format",format);item.put("category",category);
+            item.put("score",Math.min(100,score));
             item.put("partial",count>=limit && (size<0||size>count));
             item.put("markers",new JSONArray(markers));
-            if(!markers.isEmpty()||format.contains("texture")||format.startsWith("Unity")||score>0){
-                hits.add(item);
+            // Logs, UI minigames, and IL2CPP metadata are not skin texture/model files.
+            boolean useful=category.equals("asset_bundle")||category.equals("texture")||
+                    category.equals("opaque_package")||category.equals("pandora_bundle")||
+                    (category.equals("other")&&!markers.isEmpty());
+            if(useful)hits.add(item);
+            if(category.equals("opaque_package")||category.equals("other")){
+                if(size>=1048576){
+                    JSONObject info=new JSONObject();
+                    info.put("path",path);info.put("size",size);info.put("format",format);
+                    info.put("markers",new JSONArray(markers));
+                    largeUnknown.add(info);
+                    if(largeUnknown.size()>150){
+                        Collections.sort(largeUnknown,Comparator.comparingLong(o->-o.optLong("size",0)));
+                        largeUnknown.subList(75,largeUnknown.size()).clear();
+                    }
+                }
             }
         }catch(Exception ignored){}
     }
+    private static String category(String lower,String format){
+        if(lower.contains("/bqlog/")||lower.endsWith(".log")||lower.endsWith(".logcompr")||
+                lower.contains("/logs/"))return "log";
+        if(lower.endsWith("global-metadata.dat")||lower.contains("/metadata/"))return "metadata";
+        if(lower.contains("/pandora/")){
+            if(lower.endsWith(".assetbundle")||format.startsWith("Unity"))return "pandora_bundle";
+            return "pandora";
+        }
+        if(format.startsWith("Unity")||lower.endsWith(".assetbundle")||lower.endsWith(".unity3d")||
+                lower.endsWith(".bundle")||lower.endsWith(".ab"))return "asset_bundle";
+        if(format.contains("texture")||format.contains("image")||
+                lower.endsWith(".astc")||lower.endsWith(".ktx")||lower.endsWith(".ktx2")||
+                lower.endsWith(".pvr")||lower.endsWith(".png")||lower.endsWith(".jpg")||
+                lower.endsWith(".jpeg")||lower.endsWith(".dds"))return "texture";
+        if(lower.endsWith(".mpk")||lower.endsWith(".pak")||lower.endsWith(".obb")||
+                lower.endsWith(".dat")||lower.endsWith(".res")||
+                lower.endsWith(".bytes")||lower.endsWith(".bin"))return "opaque_package";
+        return "other";
+    }
+
     private static String signature(byte[] b,int n,String lower){
         if(n>=7&&ascii(b,"UnityFS"))return "UnityFS";
+        if(n>=8&&ascii(b,"UnityRaw"))return "UnityRaw";
         if(n>=8&&ascii(b,"UnityWeb"))return "UnityWeb";
         if(n>=4&&b[0]=='P'&&b[1]=='K')return "ZIP";
         if(n>=4&&(b[0]&255)==0x89&&b[1]=='P'&&b[2]=='N'&&b[3]=='G')return "PNG image";
@@ -343,6 +401,7 @@ public class MainActivity extends Activity {
         if(n>=4&&ascii(b,"OggS"))return "OGG";
         if(n>=4&&ascii(b,"FSB5"))return "FMOD";
         if(n>=4&&(b[0]&255)==0x7f&&b[1]=='E'&&b[2]=='L'&&b[3]=='F')return "ELF";
+        if(n>=4&&b[0]=='P'&&b[1]=='V'&&b[2]=='R'&&(b[3]&255)==3)return "PVR texture";
         if(lower.endsWith(".mpk"))return "MPK (unknown container)";
         if(lower.endsWith(".pak"))return "PAK (unknown container)";
         if(lower.endsWith(".obb"))return "OBB (opaque)";
@@ -353,43 +412,64 @@ public class MainActivity extends Activity {
     private static boolean ascii(byte[] b,String x){for(int i=0;i<x.length();i++)if(b[i]!=(byte)x.charAt(i))return false;return true;}
     private String briefText(){
         StringBuilder b=new StringBuilder();
-        b.append("HOK Skin Finder V1.4 - Brief report\n");
+        b.append("HOK Skin Finder V1.5 - Targeted asset report\n");
         b.append("Scanned files: ").append(totalFiles).append("\n");
         b.append("Scanned MB: ").append(totalBytes/1048576).append("\n");
         b.append("ZIP archives: ").append(archives).append("\n");
         b.append("Scan errors: ").append(errors).append("\n");
+        b.append("Excluded log files: ").append(excludedLogs).append("\n");
+        b.append("Excluded Pandora UI files: ").append(excludedPandora).append("\n");
+        b.append("IL2CPP metadata files: ").append(metadataCount).append("\n");
+        b.append("Asset bundles: ").append(bundles).append("\n");
+        b.append("Textures: ").append(textures).append("\n");
+        b.append("Opaque packages: ").append(opaque).append("\n");
         b.append("Candidate entries: ").append(finalResults==null?0:finalResults.length()).append("\n\n");
+        b.append("TOP RESOURCE CANDIDATES\n");
         if(finalResults!=null){
-            int top=Math.min(40,finalResults.length());
+            int top=Math.min(25,finalResults.length());
             for(int i=0;i<top;i++){
                 JSONObject o=finalResults.optJSONObject(i);
                 if(o==null)continue;
-                b.append("#").append(i+1).append(" score=").append(o.optInt("score")).append("\n");
+                b.append("#").append(i+1).append(" score=").append(o.optInt("score")).append(" category=").append(o.optString("category")).append("\n");
                 b.append("path: ").append(o.optString("path")).append("\n");
-                b.append("format: ").append(o.optString("format")).append("\n");
-                b.append("markers: ").append(o.optJSONArray("markers")).append("\n");
-                b.append("readBytes: ").append(o.optLong("readBytes")).append("\n\n");
-                if(b.length()>15000){b.append("...Report shortened for clipboard transfer.\n");break;}
+                b.append("format: ").append(o.optString("format")).append(" size=").append(o.optLong("size")).append("\n");
+                b.append("markers: ").append(o.optJSONArray("markers")).append("\n\n");
+                if(b.length()>17000)break;
             }
-            if(finalResults.length()>top)b.append("More results are available in the full JSON report.\n");
         }
-        b.append("Heuristic indicators only; not proof of skin assets. The app did not modify game files.");
+        b.append("\nLARGEST OPAQUE OR UNKNOWN FILES\n");
+        int n=Math.min(20,largeUnknown.size());
+        for(int i=0;i<n;i++){
+            JSONObject o=largeUnknown.get(i);
+            b.append("#").append(i+1).append(" ").append(o.optLong("size")).append(" bytes | ")
+                .append(o.optString("format")).append(" | ").append(o.optString("path")).append("\n");
+            if(b.length()>19500)break;
+        }
+        b.append("\nThese are heuristic leads, not verified skin assets. No game files were modified.");
         return b.toString();
     }
     private String displayReport(){
         StringBuilder s=new StringBuilder();
-        s.append("ไฟล์ที่ตรวจ: ").append(totalFiles).append("\n");
-        s.append("จำนวนไฟล์ที่มีเบาะแส: ").append(hits.size()).append("\n");
-        s.append("อ่านข้อมูล: ").append(totalBytes/1048576).append(" MB\n\n");
-        int top=Math.min(45,hits.size());
+        s.append("ตรวจ ").append(totalFiles).append(" ไฟล์ / ").append(totalBytes/1048576).append(" MB\n");
+        s.append("AssetBundles: ").append(bundles).append(" | รูปภาพ/Texture: ").append(textures).append("\n");
+        s.append("ไฟล์แพ็กเกจไม่ทราบโครงสร้าง: ").append(opaque).append("\n");
+        s.append("คัดออก: Log ").append(excludedLogs).append(" / Pandora ").append(excludedPandora).append("\n\n");
+        s.append("ไฟล์ทรัพยากรที่น่าตรวจต่อ:\n");
+        int top=Math.min(25,hits.size());
         for(int i=0;i<top;i++){
             JSONObject o=hits.get(i);
-            s.append(i+1).append(". [").append(o.optInt("score")).append("] ").append(o.optString("path")).append("\n");
-            s.append(o.optString("format")).append(" • ").append(o.optJSONArray("markers")).append("\n\n");
+            s.append(i+1).append(". [").append(o.optInt("score")).append("] ")
+                .append(o.optString("path")).append("\n");
+            s.append(o.optString("category")).append(" • ").append(o.optString("format"))
+                .append(" • ").append(o.optJSONArray("markers")).append("\n\n");
         }
-        if(hits.isEmpty())s.append("ยังไม่พบคำที่กำหนด อาจเป็นข้อมูลที่บีบอัด/เข้ารหัส/รูปแบบเฉพาะ\n");
-        if(hits.size()>top)s.append("บันทึกรายงาน JSON เพื่อดูผลทั้งหมด\n");
-        s.append("\nผลลัพธ์เป็นเพียงเบาะแส ไม่ใช่การยืนยันสกิน และไม่แก้ไขเกม");
+        if(hits.isEmpty())s.append("ยังไม่พบไฟล์ตรงตามลักษณะที่สแกน\n");
+        s.append("\nไฟล์ใหญ่ที่ยังไม่ทราบโครงสร้าง:\n");
+        for(int i=0;i<Math.min(10,largeUnknown.size());i++){
+            JSONObject o=largeUnknown.get(i);
+            s.append(o.optLong("size")/1048576).append(" MB: ").append(o.optString("path")).append("\n");
+        }
+        s.append("\nปุ่มคัดลอกรายงานย่อใช้ส่งผลกลับแชทได้");
         return s.toString();
     }
     private void message(String x){Toast.makeText(this,x,Toast.LENGTH_LONG).show();if(status!=null)status.setText(x);}
