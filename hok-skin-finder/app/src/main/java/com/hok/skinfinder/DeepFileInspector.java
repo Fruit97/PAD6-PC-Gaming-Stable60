@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.provider.OpenableColumns;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.File;
@@ -69,7 +70,7 @@ public final class DeepFileInspector {
             } else if (format.equals("UnityFS bundle")) {
                 line(result, "UnityFS - อ่านโครงสร้าง Header จริง:");
                 inspectUnityHeader(resolver, uri, result);
-                line(result, "หมายเหตุ: รุ่นนี้ยังไม่ถอดรหัส/คลายบล็อก LZ4, LZMA ของ UnityFS");
+                line(result, "หมายเหตุ: อ่านสารบัญ UnityFS ได้เมื่อ block-info ไม่เข้ารหัสและใช้ LZ4 หรือไม่บีบอัด แต่ยังไม่ถอดข้อมูลโมเดลเต็ม");
             } else if (format.equals("GZIP compressed")) {
                 line(result, "GZIP - อ่านตัวอย่างข้อมูลหลังคลายการบีบอัด:");
                 inspectGzip(resolver, uri, result);
@@ -176,32 +177,155 @@ public final class DeepFileInspector {
     }
 
     private static void inspectUnityHeader(ContentResolver r, Uri uri, StringBuilder out) throws IOException {
-        try (InputStream src = r.openInputStream(uri)) {
-            if (src == null) throw new IOException("ไม่พบข้อมูล");
-            DataInputStream in = new DataInputStream(new BufferedInputStream(src));
-            String sig = cstring(in, 32);
-            int version = in.readInt();
-            String player = cstring(in, 96);
-            String engine = cstring(in, 96);
-            long fileSize = in.readLong();
-            long compressed = Integer.toUnsignedLong(in.readInt());
-            long uncompressed = Integer.toUnsignedLong(in.readInt());
-            long flags = Integer.toUnsignedLong(in.readInt());
-            line(out, "Signature: " + sig);
-            line(out, "Format version: " + version);
-            line(out, "Player version: " + player);
-            line(out, "Unity engine version: " + engine);
-            line(out, "Reported bundle size: " + fileSize + " bytes");
-            line(out, "Compressed blocks-info size: " + compressed + " bytes");
-            line(out, "Original blocks-info size: " + uncompressed + " bytes");
-            line(out, "Flags: 0x" + Long.toHexString(flags).toUpperCase(Locale.ROOT));
-            String algorithm = ((flags & 63) == 0) ? "none" :
-                    ((flags & 63) == 1 ? "LZMA" :
-                    ((flags & 63) == 2 ? "LZ4" :
-                    ((flags & 63) == 3 ? "LZ4HC" : "other"));
-            line(out, "Block-info compression: " + algorithm);
-            line(out, "Block info at end: " + ((flags & 0x80) != 0));
+        byte[] header;
+        try(InputStream src=r.openInputStream(uri)){
+            if(src==null)throw new IOException("ไม่พบข้อมูล");
+            header=readPrefix(src,512);
         }
+        ByteArrayInputStream raw=new ByteArrayInputStream(header);
+        DataInputStream in=new DataInputStream(raw);
+        String sig=cstring(in,32);
+        int version=in.readInt();
+        String player=cstring(in,96);
+        String engine=cstring(in,96);
+        long fileSize=in.readLong();
+        long compressed=Integer.toUnsignedLong(in.readInt());
+        long uncompressed=Integer.toUnsignedLong(in.readInt());
+        long flags=Integer.toUnsignedLong(in.readInt());
+        int headerBytes=header.length-raw.available();
+        line(out,"Signature: "+sig);
+        line(out,"Format version: "+version);
+        line(out,"Player version: "+player);
+        line(out,"Unity engine version: "+engine);
+        line(out,"Reported bundle size: "+fileSize+" bytes");
+        line(out,"Compressed blocks-info size: "+compressed+" bytes");
+        line(out,"Original blocks-info size: "+uncompressed+" bytes");
+        line(out,"Flags: 0x"+Long.toHexString(flags).toUpperCase(Locale.ROOT));
+        String algorithm=((flags&63)==0)?"none":((flags&63)==1?"LZMA":
+                ((flags&63)==2?"LZ4":((flags&63)==3?"LZ4HC":"other")));
+        line(out,"Block-info compression: "+algorithm);
+        boolean atEnd=(flags&0x80)!=0;
+        line(out,"Block info at end: "+atEnd);
+        if((flags&0x400)!=0){
+            line(out,"พบธงที่อาจบ่งชี้การเข้ารหัสของ Unity ไม่พยายามข้ามระบบเข้ารหัส");
+            return;
+        }
+        if(compressed<=0||uncompressed<=0||compressed>4L*1024*1024||
+                uncompressed>16L*1024*1024){
+            line(out,"Block info ใหญ่เกินขอบเขตตรวจอย่างปลอดภัย");
+            return;
+        }
+        long position;
+        if(atEnd){
+            long actualSize=discoverSize(r,uri);
+            if(actualSize<0)actualSize=fileSize;
+            if(actualSize<compressed||actualSize>1024L*1024*1024){
+                line(out,"ไม่สามารถอ่าน block info ที่ท้ายไฟล์ด้วยขนาดที่ระบุได้");
+                return;
+            }
+            position=actualSize-compressed;
+        }else{
+            position=(version>=7)?((headerBytes+15L)&~15L):headerBytes;
+        }
+        byte[] packed=new byte[(int)compressed];
+        try(InputStream src=r.openInputStream(uri)){
+            if(src==null)throw new IOException("ไม่พบข้อมูล");
+            skipBytes(src,position);
+            DataInputStream blockIn=new DataInputStream(src);
+            blockIn.readFully(packed);
+        }
+        int compression=(int)(flags&63);
+        byte[] unpacked;
+        if(compression==0) {
+            if(compressed!=uncompressed)throw new IOException("Uncompressed block info size mismatch");
+            unpacked=packed;
+        }else if(compression==2||compression==3){
+            unpacked=lz4Decode(packed,(int)uncompressed);
+        }else{
+            line(out,"Block info ใช้ "+algorithm+" - รุ่นนี้ยังไม่คลายรูปแบบนี้");
+            return;
+        }
+        line(out,"คลาย Block Info สำเร็จ: "+unpacked.length+" ไบต์");
+        try(DataInputStream blocks=new DataInputStream(new ByteArrayInputStream(unpacked))){
+            byte[] hash=new byte[16];
+            blocks.readFully(hash);
+            int blockCount=blocks.readInt();
+            if(blockCount<0||blockCount>100000)throw new IOException("Block count ผิดปกติ: "+blockCount);
+            line(out,"จำนวนข้อมูลบล็อก: "+blockCount);
+            for(int i=0;i<blockCount;i++){
+                blocks.readInt(); // uncompressed block bytes
+                blocks.readInt(); // compressed block bytes
+                blocks.readUnsignedShort(); // block flags
+            }
+            int pathCount=blocks.readInt();
+            if(pathCount<0||pathCount>100000)throw new IOException("จำนวนรายการผิดปกติ: "+pathCount);
+            line(out,"จำนวนไฟล์ภายใน UnityFS: "+pathCount);
+            for(int i=0;i<pathCount;i++){
+                long offset=blocks.readLong(),nodeSize=blocks.readLong();
+                long nodeFlags=Integer.toUnsignedLong(blocks.readInt());
+                String path=cstring(blocks,1000);
+                if(i<180){
+                    line(out,"["+ (i+1) +"] "+clipped(path,180)+" size="+nodeSize+
+                            " offset="+offset+" flags=0x"+Long.toHexString(nodeFlags));
+                }
+            }
+            if(pathCount>180)line(out,"แสดง 180 รายการแรกเท่านั้น");
+            line(out,"นี่คือรายชื่อไฟล์ในสารบัญ UnityFS ไม่ใช่ผลถอดรหัสโมเดลสกิน");
+        }
+    }
+
+    private static void skipBytes(InputStream in,long position)throws IOException{
+        long remaining=position;
+        byte[] buffer=new byte[65536];
+        while(remaining>0){
+            long n=in.skip(remaining);
+            if(n>0){remaining-=n;continue;}
+            int read=in.read(buffer,0,(int)Math.min(remaining,buffer.length));
+            if(read<0)throw new IOException("ไฟล์สั้นกว่าข้อมูลตำแหน่งที่ระบุ");
+            remaining-=read;
+        }
+    }
+    /** Decode the standard raw LZ4 block format with strict input/output bounds. */
+    private static byte[] lz4Decode(byte[] src,int expected)throws IOException{
+        byte[] dst=new byte[expected];
+        int s=0,d=0;
+        while(s<src.length){
+            int token=src[s++]&255;
+            int literals=token>>4;
+            if(literals==15){
+                int part;
+                do{
+                    if(s>=src.length)throw new IOException("LZ4 literal length truncated");
+                    part=src[s++]&255;
+                    if(literals>expected-part)throw new IOException("LZ4 literal overflow");
+                    literals+=part;
+                }while(part==255);
+            }
+            if(literals>src.length-s||literals>dst.length-d)throw new IOException("LZ4 literals exceed bounds");
+            System.arraycopy(src,s,dst,d,literals);
+            s+=literals;d+=literals;
+            if(s==src.length)break;
+            if(s+2>src.length)throw new IOException("LZ4 offset missing");
+            int offset=(src[s]&255)|((src[s+1]&255)<<8);
+            s+=2;
+            if(offset==0||offset>d)throw new IOException("LZ4 offset invalid");
+            int match=token&15;
+            if(match==15){
+                int part;
+                do{
+                    if(s>=src.length)throw new IOException("LZ4 match length truncated");
+                    part=src[s++]&255;
+                    if(match>expected-part)throw new IOException("LZ4 match overflow");
+                    match+=part;
+                }while(part==255);
+            }
+            match+=4;
+            if(match>dst.length-d)throw new IOException("LZ4 output exceeds buffer");
+            for(int j=0;j<match;j++)dst[d+j]=dst[d+j-offset];
+            d+=match;
+        }
+        if(d!=expected)throw new IOException("LZ4 output unexpected length: "+d+"/"+expected);
+        return dst;
     }
 
     private static String cstring(DataInputStream in, int max) throws IOException {
