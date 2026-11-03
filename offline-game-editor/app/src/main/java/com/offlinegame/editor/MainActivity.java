@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
   private AppEntry pendingAutoApp;
   private boolean waitingForStoragePermission=false;
   private boolean runningScan=false;
+  private String lastScanReport="";
   private TextView autoInfo;
   private LinearLayout gameTab,saveTab,inspectTab,gameList,fieldList,root;
   private EditText searchField,searchApp;
@@ -70,7 +71,7 @@ public class MainActivity extends Activity {
     root=new LinearLayout(this);root.setPadding(18,22,18,45);root.setOrientation(LinearLayout.VERTICAL);
     scroll.addView(root);setContentView(scroll);
     text(root,"OFFLINE PATCH STUDIO",25,Color.WHITE);
-    text(root,"V3.0 • เลือกเกมและเริ่มสแกน • เกมออฟไลน์ • ไม่มีอินเทอร์เน็ต",13,0xff90bfd1);
+    text(root,"V3.1 • สแกนไฟล์ที่เข้าถึงได้และส่งรายงาน • ไม่มีอินเทอร์เน็ต",13,0xff90bfd1);
     LinearLayout tabs=new LinearLayout(this);tabs.setOrientation(LinearLayout.HORIZONTAL);root.addView(tabs);
     tab(tabs,"แอป",0);tab(tabs,"เซฟเกม",1);tab(tabs,"APK",2);
 
@@ -78,6 +79,7 @@ public class MainActivity extends Activity {
     text(gameTab,"แอปที่เปิดจากหน้าจอได้",19,Color.WHITE);
     text(gameTab,"กดเลือกเกม แล้วกด เริ่มทำงานอัตโนมัติ • ต้องอนุญาตจัดการไฟล์ที่ใช้ร่วมกันหนึ่งครั้ง • ไม่รองรับเซฟในพื้นที่ส่วนตัวของเกม",12,0xffaab4c1);
     autoInfo=text(gameTab,"สถานะ: ยังไม่ได้เลือกเกม",13,0xff44dfb5);
+    button(gameTab,"📤  ส่งรายงานการสแกนให้วิเคราะห์",()->shareScanReport());
     searchApp=new EditText(this);searchApp.setTextColor(Color.WHITE);searchApp.setHintTextColor(0xff8296ac);
     searchApp.setSingleLine(true);searchApp.setHint("ค้นหาชื่อแอปหรือแพ็กเกจ");gameTab.addView(searchApp);
     searchApp.addTextChangedListener(new TextWatcher(){
@@ -247,6 +249,7 @@ public class MainActivity extends Activity {
       runOnUiThread(()->{
         runningScan=false;waitDialog.dismiss();
         autoInfo.setText("เกม: "+a.label+" • แก้ "+finished.patchedFiles+" ไฟล์ / "+finished.patchedFields+" ค่า");
+        lastScanReport="Offline Patch Studio V3.1\nเกม: "+a.label+"\nแพ็กเกจ: "+a.pkg+"\n\n"+finished.summary()+"\n\nไฟล์ภายในเครื่องไม่ได้ถูกส่งโดยอัตโนมัติ";
         if(!isFinishing())new AlertDialog.Builder(this)
           .setTitle(finished.patchedFiles>0?"แก้เซฟที่เข้าถึงได้แล้ว":"ยังแก้เกมนี้ไม่ได้")
           .setMessage(finished.summary()).setPositiveButton("ตกลง",null).show();
@@ -488,6 +491,14 @@ public class MainActivity extends Activity {
       if(out==null)throw new Exception("เขียนไฟล์ไม่ได้");
       out.write(bytes);out.flush();
     }
+  }
+  private void shareScanReport(){
+    if(lastScanReport.isEmpty()){notice("กรุณาเลือกเกมและสแกนก่อน");return;}
+    Intent share=new Intent(Intent.ACTION_SEND);
+    share.setType("text/plain");
+    share.putExtra(Intent.EXTRA_TEXT,lastScanReport);
+    try{startActivity(Intent.createChooser(share,"ส่งรายงานให้วิเคราะห์"));}
+    catch(Exception e){notice("ไม่มีแอปรองรับการแชร์รายงาน");}
   }
   private void notice(String message){Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
 }
