@@ -3,7 +3,7 @@ android {
     namespace 'com.offlinegame.editor'
     compileSdk 35
     defaultConfig {
-        applicationId 'com.offlinegame.editor'
+        applicationId 'com.offlinepatchstudio.v2'
         minSdk 26
         targetSdk 35
         versionCode 2
