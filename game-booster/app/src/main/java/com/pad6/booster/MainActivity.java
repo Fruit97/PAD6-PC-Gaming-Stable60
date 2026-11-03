@@ -138,7 +138,7 @@ public class MainActivity extends Activity {
         battery.setOnClickListener(v -> openSettings(Settings.ACTION_BATTERY_SAVER_SETTINGS));
         add(tools, battery);
         Button dnd = button("ตั้งค่าห้ามรบกวน");
-        dnd.setOnClickListener(v -> openSettings(Settings.ACTION_ZEN_MODE_SETTINGS));
+        dnd.setOnClickListener(v -> openSettings(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
         add(tools, dnd);
         Button miui = button("เปิด Xiaomi Security / Game Turbo");
         miui.setOnClickListener(v -> {
