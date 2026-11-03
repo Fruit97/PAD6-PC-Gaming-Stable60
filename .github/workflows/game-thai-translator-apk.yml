@@ -1,8 +1,8 @@
-name: Build Game Thai Translator v1.2 Floating APK
+name: Build Game Thai Translator v1.3 Minimize APK
 on:
   push:
     branches:
-      - game-thai-translator-v1.2-floating-controls
+      - game-thai-translator-v1.3-minimize
   workflow_dispatch:
 
 permissions:
@@ -46,6 +46,12 @@ jobs:
           delta = brotli.decompress(base64.b64decode(patch_string))
           subprocess.run(['patch', '--batch', '-p1'], input=delta, check=True)
           print('Floating service patch applied and checked.')
+          v13_text = pathlib.Path('payload/v13-minimize.b64').read_text()
+          sha = hashlib.sha256(v13_text.encode('ascii')).hexdigest()
+          assert sha == 'e0d4968b5c458c704b975b6ce10398086b40b34d7371248d15ac8c9bf1894428', sha
+          delta13 = brotli.decompress(base64.b64decode(v13_text))
+          subprocess.run(['patch', '--batch', '-p1'], input=delta13, check=True)
+          print('v1.3 collapse and expand patch applied.')
           PY
       - name: Install Android SDK 35
         run: |
@@ -64,7 +70,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GameThaiTranslator-v1.2-Floating-APK
+          name: GameThaiTranslator-v1.3-Minimize-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
