@@ -10,6 +10,9 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -49,6 +52,10 @@ public class MainActivity extends Activity {
   private byte[] original;
   private Uri sourceUri;
   private AppEntry selectedApp;
+  private AppEntry pendingAutoApp;
+  private boolean waitingForStoragePermission=false;
+  private boolean runningScan=false;
+  private TextView autoInfo;
   private LinearLayout gameTab,saveTab,inspectTab,gameList,fieldList,root;
   private EditText searchField,searchApp;
   private TextView fileInfo,apkInfo;
@@ -63,13 +70,14 @@ public class MainActivity extends Activity {
     root=new LinearLayout(this);root.setPadding(18,22,18,45);root.setOrientation(LinearLayout.VERTICAL);
     scroll.addView(root);setContentView(scroll);
     text(root,"OFFLINE PATCH STUDIO",25,Color.WHITE);
-    text(root,"V2.0 • เกมออฟไลน์ • ไม่รูท • ไม่มีอินเทอร์เน็ต",13,0xff90bfd1);
+    text(root,"V3.0 • เลือกเกมและเริ่มสแกน • เกมออฟไลน์ • ไม่มีอินเทอร์เน็ต",13,0xff90bfd1);
     LinearLayout tabs=new LinearLayout(this);tabs.setOrientation(LinearLayout.HORIZONTAL);root.addView(tabs);
     tab(tabs,"แอป",0);tab(tabs,"เซฟเกม",1);tab(tabs,"APK",2);
 
     gameTab=section();
     text(gameTab,"แอปที่เปิดจากหน้าจอได้",19,Color.WHITE);
-    text(gameTab,"เลือกรายการเพื่อตรวจข้อมูล สำรอง APK หรือเปิดเซฟที่เลือกเอง (ไม่มีสิทธิ์เข้าข้อมูลส่วนตัวของแอปอื่น)",12,0xffaab4c1);
+    text(gameTab,"กดเลือกเกม แล้วกด เริ่มทำงานอัตโนมัติ • ต้องอนุญาตจัดการไฟล์ที่ใช้ร่วมกันหนึ่งครั้ง • ไม่รองรับเซฟในพื้นที่ส่วนตัวของเกม",12,0xffaab4c1);
+    autoInfo=text(gameTab,"สถานะ: ยังไม่ได้เลือกเกม",13,0xff44dfb5);
     searchApp=new EditText(this);searchApp.setTextColor(Color.WHITE);searchApp.setHintTextColor(0xff8296ac);
     searchApp.setSingleLine(true);searchApp.setHint("ค้นหาชื่อแอปหรือแพ็กเกจ");gameTab.addView(searchApp);
     searchApp.addTextChangedListener(new TextWatcher(){
@@ -164,12 +172,15 @@ public class MainActivity extends Activity {
     if(shown==0)text(gameList,"ไม่พบแอปที่ตรงกับการค้นหา",14,0xffefb36a);
   }
   private void appMenu(AppEntry a){
-    final String[] options={"🔎  ดูข้อมูลแอปและสิทธิ์","📦  สำรองไฟล์ APK (ZIP)","📂  เลือกไฟล์เซฟเพื่อแก้ไข","▶  เปิดแอป"};
+    final String[] options={"⚡  เริ่มทำงานอัตโนมัติ","↩  คืนค่าเซฟที่แอปแก้ล่าสุด",
+      "🔎  ดูข้อมูลแอปและสิทธิ์","📦  สำรองไฟล์ APK (ZIP)","📂  เลือกไฟล์เซฟด้วยตนเอง","▶  เปิดแอป"};
     new AlertDialog.Builder(this).setTitle(a.label).setItems(options,(d,which)->{
-      if(which==0)showAppInfo(a);
-      if(which==1)backupApp(a);
-      if(which==2){showTab(1);chooseSave();}
-      if(which==3){
+      if(which==0)startAuto(a);
+      if(which==1)restoreAuto(a);
+      if(which==2)showAppInfo(a);
+      if(which==3)backupApp(a);
+      if(which==4){showTab(1);chooseSave();}
+      if(which==5){
         try{
           Intent launch=getPackageManager().getLaunchIntentForPackage(a.pkg);
           if(launch==null)throw new Exception("เปิดแอปไม่ได้");
@@ -177,6 +188,83 @@ public class MainActivity extends Activity {
         }catch(Exception e){notice(e.getMessage());}
       }
     }).setNegativeButton("ยกเลิก",null).show();
+  }
+  private void startAuto(AppEntry a){
+    if(runningScan){notice("กำลังทำงานอยู่");return;}
+    pendingAutoApp=a;
+    if(!AutoSaveScanner.hasSharedStorageAccess()){
+      requestStorageAccess();return;
+    }
+    runAutoPatch(a);
+  }
+  private void requestStorageAccess(){
+    new AlertDialog.Builder(this).setTitle("ต้องเปิดสิทธิ์ครั้งแรก")
+      .setMessage("เพื่อค้นหาไฟล์เซฟที่อยู่ในพื้นที่จัดเก็บที่ใช้ร่วมกัน ระบบจะเปิดหน้าการตั้งค่า Android ให้กดอนุญาต 'จัดการไฟล์ทั้งหมด' หนึ่งครั้ง\n"+
+          "สิทธิ์นี้ยังไม่เปิดทางเข้า /Android/data หรือข้อมูลส่วนตัวของเกมอื่น\n"+
+          "แอปจะไม่ส่งข้อมูลออกอินเทอร์เน็ต")
+      .setNegativeButton("ยกเลิก",(d,w)->{pendingAutoApp=null;})
+      .setPositiveButton("เปิดการตั้งค่า",(d,w)->{
+        waitingForStoragePermission=true;
+        Intent intent=new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+        intent.setData(Uri.parse("package:"+getPackageName()));
+        try{startActivity(intent);}
+        catch(Exception e){
+          Intent fallback=new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+          try{startActivity(fallback);}
+          catch(Exception ignored){waitingForStoragePermission=false;notice("ไม่สามารถเปิดหน้าตั้งค่าสิทธิ์ได้");}
+        }
+      }).show();
+  }
+  @Override protected void onResume(){
+    super.onResume();
+    if(waitingForStoragePermission){
+      waitingForStoragePermission=false;
+      if(AutoSaveScanner.hasSharedStorageAccess()&&pendingAutoApp!=null){
+        AppEntry a=pendingAutoApp;
+        pendingAutoApp=null;
+        runAutoPatch(a);
+      }else{
+        pendingAutoApp=null;
+        if(autoInfo!=null)autoInfo.setText("สถานะ: ไม่ได้รับสิทธิ์ จึงยังไม่เริ่มค้นหา");
+      }
+    }
+  }
+  private void runAutoPatch(AppEntry a){
+    if(runningScan)return;
+    runningScan=true;
+    autoInfo.setText("กำลังค้นหาข้อมูลที่เข้าถึงได้ของ "+a.label+"...");
+    AlertDialog waitDialog=new AlertDialog.Builder(this).setTitle("สแกนเกมออฟไลน์")
+      .setMessage("กำลังตรวจไฟล์และสำรองต้นฉบับก่อนแก้ไข...").setCancelable(false).create();
+    waitDialog.show();
+    new Thread(()->{
+      AutoSaveScanner.Result result;
+      try{result=AutoSaveScanner.patch(getApplicationContext(),a.pkg,a.label);}
+      catch(Exception ex){
+        result=new AutoSaveScanner.Result();
+        result.errors=1;result.explanation="สแกนไม่สำเร็จ: "+ex.getMessage();
+      }
+      final AutoSaveScanner.Result finished=result;
+      runOnUiThread(()->{
+        runningScan=false;waitDialog.dismiss();
+        autoInfo.setText("เกม: "+a.label+" • แก้ "+finished.patchedFiles+" ไฟล์ / "+finished.patchedFields+" ค่า");
+        if(!isFinishing())new AlertDialog.Builder(this)
+          .setTitle(finished.patchedFiles>0?"แก้เซฟที่เข้าถึงได้แล้ว":"ยังแก้เกมนี้ไม่ได้")
+          .setMessage(finished.summary()).setPositiveButton("ตกลง",null).show();
+      });
+    }).start();
+  }
+  private void restoreAuto(AppEntry a){
+    if(!AutoSaveScanner.hasSharedStorageAccess()){notice("ต้องอนุญาตเข้าถึงไฟล์ก่อน");return;}
+    new AlertDialog.Builder(this).setTitle("คืนค่าที่แก้ล่าสุด?")
+      .setMessage("เรียกคืนไฟล์เซฟต้นฉบับจากสำเนาที่แอปเก็บไว้ในเครื่อง")
+      .setNegativeButton("ยกเลิก",null).setPositiveButton("คืนค่า",(d,w)->{
+        new Thread(()->{
+          AutoSaveScanner.Result r=AutoSaveScanner.restoreLast(getApplicationContext(),a.pkg);
+          runOnUiThread(()->new AlertDialog.Builder(this)
+            .setTitle("ผลการคืนค่า").setMessage(r.summary())
+            .setPositiveButton("ตกลง",null).show());
+        }).start();
+      }).show();
   }
   private void showAppInfo(AppEntry a){
     StringBuilder s=new StringBuilder("แพ็กเกจ: "+a.pkg+"\nเวอร์ชัน: "+a.version+
