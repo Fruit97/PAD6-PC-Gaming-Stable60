@@ -1,8 +1,8 @@
-name: Build Game Thai Translator APK
+name: Build Game Thai Translator v1.2 Floating APK
 on:
   push:
     branches:
-      - game-thai-translator-build
+      - game-thai-translator-v1.2-floating-controls
   workflow_dispatch:
 
 permissions:
@@ -38,6 +38,14 @@ jobs:
           with tarfile.open(fileobj=io.BytesIO(data)) as archive:
               archive.extractall(path='.')
           print('Source checksum passed; Android project restored.')
+          patch_parts = [pathlib.Path('payload/v12-patch.part01.b64').read_text(), pathlib.Path('payload/v12-patch.part02.b64').read_text()]
+          patch_string = ''.join(patch_parts)
+          patch_sha = hashlib.sha256(patch_string.encode('ascii')).hexdigest()
+          assert patch_sha == '15494d9c0f144210d4356fc64e0677209720fa2f5ee9501d13adce4b81f18249', patch_sha
+          import subprocess
+          delta = brotli.decompress(base64.b64decode(patch_string))
+          subprocess.run(['patch', '--batch', '-p1'], input=delta, check=True)
+          print('Floating service patch applied and checked.')
           PY
       - name: Install Android SDK 35
         run: |
@@ -56,7 +64,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GameThaiTranslator-v1.1-APK
+          name: GameThaiTranslator-v1.2-Floating-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
