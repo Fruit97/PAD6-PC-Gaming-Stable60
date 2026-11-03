@@ -1,9 +1,8 @@
-# PAD6 PC Gaming — Xiaomi Pad 6 / Stable 60
+# Game Thai Translator — dedicated APK build branch
 
-A device-specific experimental fork build of [DroidDeck](https://github.com/Droid-Deck/DroidDeck) targeting Xiaomi Pad 6 (Snapdragon 870 / Adreno 650 / Android 14 / RAM 8GB).
+This branch contains a self-contained version of the Android source as
+three Base64-encoded chunks of a Brotli-compressed tar archive. The
+GitHub Actions workflow reconstructs the files, validates the SHA-256
+checksum, compiles the Android app, and publishes the debug APK artifact.
 
-The source-code patch aims at 60 FPS by tuning resolution/upscaling, but **cannot guarantee 60 FPS in every game**. Adreno 6xx support is experimental; Steam compatibility varies by game. Requires Android 14 Developer Options adjustment per upstream. The real APK is built only by a successful GitHub Actions run.
-
-This project includes source-modification instructions and retains attribution to original upstream GPL-3.0 sources. This is not affiliated with Valve or Xiaomi.
-
-See `.github/workflows/pad6-build.yml` for the CI build pipeline.
+The repository default branch and the original application are not changed.
