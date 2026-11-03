@@ -17,14 +17,16 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
       - name: Restore source and verify checksum
         run: |
-          python3 -m pip install --user brotli
-          python3 - <<'PY'
+          python -m pip install brotli
+          python - <<'PY'
           import hashlib, base64, brotli, io, tarfile, pathlib
           parts = [pathlib.Path(f'payload/source.part{i:02}.b64').read_text() for i in range(1,4)]
           combined = ''.join(parts)
@@ -39,8 +41,9 @@ jobs:
           PY
       - name: Install Android SDK 35
         run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Inspect APK
