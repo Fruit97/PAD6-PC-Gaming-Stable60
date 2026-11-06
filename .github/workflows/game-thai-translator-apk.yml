@@ -1,8 +1,8 @@
-name: Build Game Thai Translator v1.3 Minimize APK
+name: Build Game Thai Translator v1.4 Chat Keyboard APK
 on:
   push:
     branches:
-      - game-thai-translator-v1.3-minimize
+      - game-thai-translator-v1.4-chat-keyboard
   workflow_dispatch:
 
 permissions:
@@ -52,6 +52,12 @@ jobs:
           delta13 = brotli.decompress(base64.b64decode(v13_text))
           subprocess.run(['patch', '--batch', '-p1'], input=delta13, check=True)
           print('v1.3 collapse and expand patch applied.')
+          v14_text = ''.join(pathlib.Path(f'payload/v14-chat.part0{i}.b64').read_text() for i in range(1,3))
+          patch_hash = hashlib.sha256(v14_text.encode('ascii')).hexdigest()
+          assert patch_hash == '5c9baa2a9e17a2f45334b27021ba22e1e40d528f2a8f6ee0eccd8e8abb73cfb2', patch_hash
+          delta14 = brotli.decompress(base64.b64decode(v14_text))
+          subprocess.run(['patch', '--batch', '-p1'], input=delta14, check=True)
+          print('v1.4 natural chat keyboard + swear phrase dictionary applied.')
           PY
       - name: Install Android SDK 35
         run: |
@@ -70,7 +76,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GameThaiTranslator-v1.3-Minimize-APK
+          name: GameThaiTranslator-v1.4-ChatKeyboard-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
