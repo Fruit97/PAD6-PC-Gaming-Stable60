@@ -1,8 +1,8 @@
-name: Build Game Thai Translator v1.5 Voice Keyboard APK
+name: Build Game Thai Translator v1.6 Uncensored Chat APK
 on:
   push:
     branches:
-      - game-thai-translator-v1.5-voice-keyboard
+      - game-thai-translator-v1.6-uncensored
   workflow_dispatch:
 
 permissions:
@@ -71,6 +71,7 @@ jobs:
           delta15 = brotli.decompress(base64.b64decode(patch15))
           subprocess.run(['patch','--batch','-p2'],input=delta15,check=True)
           print('v1.5 voice typing, revised keyboard and runtime microphone permission applied.')
+          subprocess.run(['python','payload/v16_uncensored.py'],check=True)
           PY
       - name: Install Android SDK 35
         run: |
@@ -89,7 +90,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GameThaiTranslator-v1.5-VoiceKeyboard-APK
+          name: GameThaiTranslator-v1.6-Uncensored-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
