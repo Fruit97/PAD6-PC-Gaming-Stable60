@@ -67,7 +67,7 @@ jobs:
           code = keyboard.read_text()
           if 'import android.os.Build;' not in code:
               keyboard.write_text(code.replace('import android.text.InputType;',
-                                                   'import android.text.InputType;\\nimport android.os.Build;'))
+                                                   'import android.text.InputType;' + chr(10) + 'import android.os.Build;'))
           delta15 = brotli.decompress(base64.b64decode(patch15))
           subprocess.run(['patch','--batch','-p2'],input=delta15,check=True)
           print('v1.5 voice typing, revised keyboard and runtime microphone permission applied.')
