@@ -1,8 +1,8 @@
-name: Build Game Thai Translator v1.7 Continuous Voice APK
+name: Build Game Thai Translator v1.8 Complete Phrase APK
 on:
   push:
     branches:
-      - game-thai-translator-v1.7-continuous-voice
+      - game-thai-translator-v1.8-full-phrases
   workflow_dispatch:
 
 permissions:
@@ -73,6 +73,7 @@ jobs:
           print('v1.5 voice typing, revised keyboard and runtime microphone permission applied.')
           subprocess.run(['python','payload/v16_uncensored.py'],check=True)
           subprocess.run(['python','payload/v17_prepare.py'],check=True)
+          subprocess.run(['python','payload/v18_prepare.py'],check=True)
           PY
       - name: Install Android SDK 35
         run: |
@@ -81,6 +82,13 @@ jobs:
           test -x "$SDK_MANAGER"
           yes | "$SDK_MANAGER" --licenses >/dev/null || true
           "$SDK_MANAGER" --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Test full-phrase preservation and loss detection
+        run: |
+          mkdir -p /tmp/phrase-classes
+          javac -encoding UTF-8 -d /tmp/phrase-classes \
+            app/src/main/java/com/example/gamethaitranslator/SpeechPhraseGuard.java \
+            payload/v18/SpeechPhraseGuardTest.java
+          java -cp /tmp/phrase-classes com.example.gamethaitranslator.SpeechPhraseGuardTest
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Inspect APK
@@ -91,7 +99,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GameThaiTranslator-v1.7-ContinuousVoice-APK
+          name: GameThaiTranslator-v1.8-FullPhrases-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
