@@ -1,8 +1,8 @@
-name: Build Game Thai Translator v1.4 Chat Keyboard APK
+name: Build Game Thai Translator v1.5 Voice Keyboard APK
 on:
   push:
     branches:
-      - game-thai-translator-v1.4-chat-keyboard
+      - game-thai-translator-v1.5-voice-keyboard
   workflow_dispatch:
 
 permissions:
@@ -58,6 +58,12 @@ jobs:
           delta14 = brotli.decompress(base64.b64decode(v14_text))
           subprocess.run(['patch', '--batch', '-p1'], input=delta14, check=True)
           print('v1.4 natural chat keyboard + swear phrase dictionary applied.')
+          patch15 = ''.join(pathlib.Path(f'payload/v15-voice.part0{i}.b64').read_text() for i in range(1,4))
+          digest15 = hashlib.sha256(patch15.encode('ascii')).hexdigest()
+          assert digest15 == '56313e5cc9c2e2b496902fec6b617096a123623465690dc7be2fdbcc27c507e6', digest15
+          delta15 = brotli.decompress(base64.b64decode(patch15))
+          subprocess.run(['patch','--batch','-p2'],input=delta15,check=True)
+          print('v1.5 voice typing, revised keyboard and runtime microphone permission applied.')
           PY
       - name: Install Android SDK 35
         run: |
@@ -76,7 +82,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GameThaiTranslator-v1.4-ChatKeyboard-APK
+          name: GameThaiTranslator-v1.5-VoiceKeyboard-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
