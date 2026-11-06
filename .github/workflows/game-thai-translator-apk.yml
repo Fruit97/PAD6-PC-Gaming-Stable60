@@ -61,6 +61,13 @@ jobs:
           patch15 = ''.join(pathlib.Path(f'payload/v15-voice.part0{i}.b64').read_text() for i in range(1,4))
           digest15 = hashlib.sha256(patch15.encode('ascii')).hexdigest()
           assert digest15 == '56313e5cc9c2e2b496902fec6b617096a123623465690dc7be2fdbcc27c507e6', digest15
+          # v1.4 source export included an unused Build import absent from the
+          # generated branch's reconstruction; normalize before applying patch.
+          keyboard = pathlib.Path('app/src/main/java/com/example/gamethaitranslator/ChatKeyboardService.java')
+          code = keyboard.read_text()
+          if 'import android.os.Build;' not in code:
+              keyboard.write_text(code.replace('import android.text.InputType;',
+                                                   'import android.text.InputType;\\nimport android.os.Build;'))
           delta15 = brotli.decompress(base64.b64decode(patch15))
           subprocess.run(['patch','--batch','-p2'],input=delta15,check=True)
           print('v1.5 voice typing, revised keyboard and runtime microphone permission applied.')
