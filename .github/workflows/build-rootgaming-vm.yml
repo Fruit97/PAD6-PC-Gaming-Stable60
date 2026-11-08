@@ -24,10 +24,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Confirm Android SDK available
+      - name: Locate preinstalled Android SDK manager
         run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
-          command -v sdkmanager
+          SDK_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_HOME" >> "$GITHUB_ENV"
+          SDKMANAGER="$(find "$SDK_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)"
+          if [ -z "$SDKMANAGER" ]; then echo "sdkmanager not found"; exit 1; fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          "$SDKMANAGER" --version
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
