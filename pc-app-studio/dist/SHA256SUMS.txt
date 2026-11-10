@@ -1,1 +1,1 @@
-8de8a80a60bc27d4e7bd0ffe27ec2b84d283d04c182513ec56ecc391cd983aa1  PCAppStudio-v0.3-craft-debug.apk
+beab3397f48582178634e10e6f8198a0e5b52cb8a63309af661988d3174292de  PCAppStudio-v0.4-craft-debug.apk
