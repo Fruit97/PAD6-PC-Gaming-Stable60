@@ -52,6 +52,8 @@ public final class CraftAnythingActivity extends Activity {
     private static final int PICK_CRAFT_ZIP = 3001;
     private static final String RELEASES =
         "https://github.com/storytold/craft-anything/releases";
+    private static final String WINDOWS_PORTABLE =
+        "https://github.com/storytold/craft-anything/releases/download/v0.6.0/craft-anything-0.6.0-windows-x64-portable.zip";
     private static final int BG = Color.rgb(12, 17, 35);
     private static final int PANEL = Color.rgb(26, 34, 57);
     private static final int TEXT = Color.rgb(241, 246, 255);
@@ -132,8 +134,9 @@ public final class CraftAnythingActivity extends Activity {
         LinearLayout select = group();
         root.addView(select, space(22));
         select.addView(text("1  นำเข้า Craft Anything", 18, true, TEXT));
-        select.addView(text("ดาวน์โหลด Windows x64 Portable ZIP จาก GitHub โครงการ แล้วเลือก ZIP ในหน้าต่างนี้ ระบบจะคลายไฟล์โดยรักษาโครงสร้างโฟลเดอร์", 13, false, MUTED), space(9));
-        select.addView(button("เปิดหน้าดาวน์โหลดทางการ", false, v -> openUrl(RELEASES)), space(13));
+        select.addView(text("เลือกไฟล์ craft-anything-0.6.0-windows-x64-portable.zip เท่านั้น ไฟล์ FreeBSD/Linux .tar.gz และ AppImage ใช้กับ Winlator ไม่ได้", 13, false, MUTED), space(9));
+        select.addView(button("ดาวน์โหลด Windows x64 Portable ZIP ที่ถูกต้อง", false, v -> openUrl(WINDOWS_PORTABLE)), space(13));
+        select.addView(button("ดูเวอร์ชันอื่นบน GitHub ทางการ", false, v -> openUrl(RELEASES)), space(9));
         importButton = button("เลือก ZIP และเตรียมไฟล์", true, v -> chooseArchive());
         select.addView(importButton, space(9));
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
@@ -171,12 +174,17 @@ public final class CraftAnythingActivity extends Activity {
         if (extracting) return;
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("application/zip");
+        // Android document providers often classify downloaded ZIPs as
+        // application/octet-stream; a narrow MIME filter hides valid files.
+        // Let the user see every download, then validate the selected name.
+        i.setType("*/*");
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try { startActivityForResult(i, PICK_CRAFT_ZIP); }
         catch (Exception ex) {
-            i.setType("*/*");
-            startActivityForResult(i, PICK_CRAFT_ZIP);
+            new AlertDialog.Builder(this)
+                .setTitle("เปิดตัวเลือกไฟล์ไม่ได้")
+                .setMessage("กรุณาตรวจสอบว่าเครื่องมีแอปจัดการไฟล์ที่เปิดเอกสารได้")
+                .setPositiveButton("ตกลง", null).show();
         }
     }
 
@@ -189,10 +197,19 @@ public final class CraftAnythingActivity extends Activity {
             if (c != null && c.moveToFirst()) name = c.getString(0);
         } catch (Exception ignored) { }
         if (name == null || !name.toLowerCase(Locale.ROOT).endsWith(".zip")) {
+            String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+            String reason = lower.contains("freebsd")
+                ? "นี่คือไฟล์ FreeBSD ซึ่งรันผ่าน Winlator ไม่ได้"
+                : lower.contains("linux") || lower.endsWith(".appimage")
+                    ? "นี่คือไฟล์ Linux ซึ่งไม่ใช่โปรแกรม Windows สำหรับ Winlator"
+                    : lower.endsWith(".tar.gz") || lower.endsWith(".tgz")
+                        ? "ไฟล์ .tar.gz ไม่ใช่ไฟล์ .zip สำหรับระบบ Windows Portable ของแอป"
+                        : "โปรดเลือก Windows x64 Portable ZIP ไม่ใช่ไฟล์ APK หรือไฟล์ชนิดอื่น";
             new AlertDialog.Builder(this)
-                .setTitle("กรุณาเลือกไฟล์ .zip")
-                .setMessage("ให้ใช้ Windows x64 Portable ZIP ของ Craft Anything จากหน้า Releases ทางการ")
-                .setPositiveButton("ตกลง", null).show();
+                .setTitle("ไฟล์นี้ไม่รองรับ")
+                .setMessage(reason + "\n\nไฟล์ที่ต้องใช้: craft-anything-0.6.0-windows-x64-portable.zip\n\nการเปลี่ยนชื่อไฟล์ไม่ได้แปลงระบบปฏิบัติการ")
+                .setPositiveButton("ดาวน์โหลด ZIP ที่ถูกต้อง", (dialog, which) -> openUrl(WINDOWS_PORTABLE))
+                .setNegativeButton("ปิด", null).show();
             return;
         }
         prepareZip(uri);
