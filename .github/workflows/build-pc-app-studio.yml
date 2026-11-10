@@ -28,12 +28,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up Android SDK and sdkmanager
-        uses: android-actions/setup-android@v3
-      - name: Install Android API 35
+      - name: Install Android API 35 using preinstalled command line tools
         run: |
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
-          sdkmanager --list_installed
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKMGR="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDKMGR"
+          echo "Using $SDKMGR"
+          "$SDKMGR" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0'
+          "$SDKMGR" --sdk_root="$ANDROID_HOME" --list_installed | tail -30
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
