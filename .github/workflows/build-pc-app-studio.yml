@@ -1,4 +1,4 @@
-name: Build PC App Studio v0.2 APK
+name: Build PC App Studio v0.3 Craft APK
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - pc-app-studio-v02
     paths:
       - 'pc-app-studio/source.zip'
+      - 'pc-app-studio/overrides/**'
       - '.github/workflows/build-pc-app-studio.yml'
   workflow_dispatch:
 
@@ -31,6 +32,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Apply Craft Anything v0.3 source overlay and run unit tests
+        run: |
+          python3 pc-app-studio/overrides/apply.py
+          mkdir -p /tmp/craft-zip-tests
+          javac -d /tmp/craft-zip-tests pc-app-studio/overrides/CraftZipPaths.java pc-app-studio/overrides/CraftZipPathsTest.java
+          java -cp /tmp/craft-zip-tests com.pcappstudio.launcher.CraftZipPathsTest
       - name: Install Android API 35 using preinstalled command line tools
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
@@ -54,14 +61,14 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PCAppStudio-v0.2-debug-apk
+          name: PCAppStudio-v0.3-craft-debug-apk
           path: pc-app-studio/build/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Publish APK on this branch
         run: |
           mkdir -p pc-app-studio/dist
-          cp pc-app-studio/build/app/build/outputs/apk/debug/app-debug.apk pc-app-studio/dist/PCAppStudio-v0.2-debug.apk
-          ( cd pc-app-studio/dist && sha256sum PCAppStudio-v0.2-debug.apk > SHA256SUMS.txt )
+          cp pc-app-studio/build/app/build/outputs/apk/debug/app-debug.apk pc-app-studio/dist/PCAppStudio-v0.3-craft-debug.apk
+          ( cd pc-app-studio/dist && sha256sum PCAppStudio-v0.3-craft-debug.apk > SHA256SUMS.txt )
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pc-app-studio/dist
