@@ -28,6 +28,6 @@ manifest.write_text(s, encoding="utf-8")
 
 gradle = app / "build.gradle"
 s = gradle.read_text(encoding="utf-8")
-s = s.replace("versionCode 2", "versionCode 3").replace("versionName '0.2.0'", "versionName '0.3.0'")
+s = s.replace("versionCode 2", "versionCode 4").replace("versionName '0.2.0'", "versionName '0.4.0'")
 gradle.write_text(s, encoding="utf-8")
-print("Craft Anything v0.3 overlay applied.")
+print("Craft Anything v0.4 overlay applied.")
