@@ -1,0 +1,61 @@
+name: Build PC App Studio v0.2 APK
+
+on:
+  push:
+    branches:
+      - pc-app-studio-v02
+    paths:
+      - 'pc-app-studio/source.zip'
+      - '.github/workflows/build-pc-app-studio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+      - name: Unpack PC App Studio source
+        run: |
+          mkdir -p pc-app-studio/build
+          unzip -q pc-app-studio/source.zip -d pc-app-studio/build
+          ls -la pc-app-studio/build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android API 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build Android APK
+        working-directory: pc-app-studio/build
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify APK
+        run: |
+          APK=pc-app-studio/build/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          sha256sum "$APK"
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PCAppStudio-v0.2-debug-apk
+          path: pc-app-studio/build/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Publish APK on this branch
+        run: |
+          mkdir -p pc-app-studio/dist
+          cp pc-app-studio/build/app/build/outputs/apk/debug/app-debug.apk pc-app-studio/dist/PCAppStudio-v0.2-debug.apk
+          ( cd pc-app-studio/dist && sha256sum PCAppStudio-v0.2-debug.apk > SHA256SUMS.txt )
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pc-app-studio/dist
+          git commit -m "Build: PC App Studio v0.2 debug APK [skip ci]" || exit 0
+          git push origin HEAD:pc-app-studio-v02
