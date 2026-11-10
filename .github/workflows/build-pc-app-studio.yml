@@ -24,6 +24,9 @@ jobs:
           mkdir -p pc-app-studio/build
           unzip -q pc-app-studio/source.zip -d pc-app-studio/build
           ls -la pc-app-studio/build
+          # Android's built-in Button has no setTextAllCaps method.
+          sed -i '/b\.setTextAllCaps(false);/d' pc-app-studio/build/app/src/main/java/com/pcappstudio/launcher/MainActivity.java
+          ! grep -q 'setTextAllCaps' pc-app-studio/build/app/src/main/java/com/pcappstudio/launcher/MainActivity.java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
